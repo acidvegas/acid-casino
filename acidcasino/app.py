@@ -32,6 +32,7 @@ PING_EVERY    = 15   # seconds between keep-alive comments on an idle event stre
 STATS_EVERY   = 30   # seconds between pushes of a player's summary to acid-arcade-db
 CHANGES_EVERY = 60   # seconds between polls of acid-arcade-db for renamed and deleted accounts
 STATS_SENT    = {}   # user id -> (main, stats) last pushed to acid-arcade-db
+PRESENT_EVERY = 30   # seconds between reports of who has the casino open to acid-arcade-db
 
 if PROXIES:
 	app.wsgi_app = ProxyFix(app.wsgi_app, x_for=PROXIES, x_proto=PROXIES, x_host=PROXIES)
@@ -93,6 +94,7 @@ def house_tick() -> bool:
 			c.execute('INSERT INTO topplers(user_id, username, worth, house, at) VALUES(?, ?, ?, ?, ?)', (top['id'], top['username'], top['worth'], bank, int(time.time())))
 			if arcade.enabled():
 				threading.Thread(target=stats_push, args=(summaries(c, top['id'])[0],), daemon=True).start()
+			chat.event(top['id'], 'record', 'toppled the house')
 		crowns = [r['username'] for r in c.execute('SELECT COALESCE(u.username, t.username) AS username FROM topplers t LEFT JOIN users u ON u.id = t.user_id ORDER BY t.at')]
 	if won:
 		chat.add('lobby', None, 'casino', f'{top["username"]} TOPPLED THE HOUSE with {money(top["worth"])} against the house\'s {money(bank)}')
@@ -159,6 +161,20 @@ def payload() -> dict:
 	return request.get_json(silent=True) or {}
 
 
+def presence_loop():
+	'''Background thread: tell acid-arcade-db which signed in players have the casino open, even when nobody does.'''
+
+	while True:
+		try:
+			now = time.time()
+			with hub.LOCK:
+				ids = {u for u in hub.SUBS.values() if u} | {u for u, at in hub.SEEN.items() if now - at < 60}
+			arcade.presence(sorted(ids))
+		except Exception as e:
+			print(f'presence error: {e!r}')
+		time.sleep(PRESENT_EVERY)
+
+
 def reply(table, user_id: int, error: str = None) -> tuple:
 	'''Answer a table action with the new table view, or the error, and wake the watchers.'''
 
@@ -185,6 +201,7 @@ def setup():
 	if arcade.enabled():
 		threading.Thread(target=arcade_sync, daemon=True).start()
 		threading.Thread(target=stats_loop, daemon=True).start()
+		threading.Thread(target=presence_loop, daemon=True).start()
 
 
 def stats_loop():

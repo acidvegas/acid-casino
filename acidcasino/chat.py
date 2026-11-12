@@ -3,10 +3,12 @@
 # acidcasino/chat.py
 
 import collections
+import threading
 import time
 
+import arcade
 import hub
-from storage import DB_LOCK, db_connect, feed_add, feed_load
+from storage import DB_LOCK, db_connect, feed_add, feed_load, money
 
 
 KEEP       = 100  # messages kept per room
@@ -22,6 +24,7 @@ EMOJIS     = ('👍', '👏', '😂', '😮', '😭', '😡', '🔥', '💰', '�
 REACTS     = {}   # table id -> recent reactions and dealer tips, only ever sent live
 REACT_NEXT = [0]  # last reaction id handed out
 REACT_TIME = {}   # user id -> recent reaction and tip times
+BIG_WIN    = 10_000_000 # cents, a single result paying this much net goes to the acid-arcade-db activity feed
 
 
 def add(room: str, user_id: int, name: str, text: str):
@@ -36,11 +39,14 @@ def add(room: str, user_id: int, name: str, text: str):
 		ROOMS.setdefault(room, collections.deque(maxlen=KEEP)).append(msg)
 
 
-def announce(name: str, profit: int, game: str):
-	'''Put a finished bet in the live feed, which has its own tab so it never fills the chat.
+def announce(name: str, profit: int, game: str, user_id: int = None):
+	'''Put a finished bet in the live feed, which has its own tab so it never fills the chat, and a big win in the arcade activity feed.
 
 	:param profit: what the player won (or with a negative amount, lost) on the bet
 	'''
+
+	if profit >= BIG_WIN:
+		event(user_id, 'bigwin', f'won {money(profit)} at {game}')
 
 	at = int(time.time())
 	with hub.LOCK:
@@ -54,6 +60,19 @@ def drop(room: str):
 	'''Forget a closed table's chat.'''
 
 	ROOMS.pop(room, None)
+
+
+def event(user_id: int, kind: str, text: str):
+	'''Send a line to the acid-arcade-db activity feed in the background, printing any error so play never notices. Guests and standalone mode send nothing.'''
+
+	def send():
+		try:
+			arcade.event(user_id, kind, text)
+		except Exception as e:
+			print(f'arcade event for {user_id} failed: {e!r}')
+
+	if arcade.enabled() and user_id:
+		threading.Thread(target=send, daemon=True).start()
 
 
 def feed_since(last: int) -> list:

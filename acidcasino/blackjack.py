@@ -336,9 +336,9 @@ def settle(t: Table):
 			wager(c, s['user_id'], s['stake'])
 			save_stake(c, t, s['user_id'], 0)
 			s['net'] = payout - s['stake']
-			nets.append((s['name'], s['net']))
-	for name, net in nets:
-		chat.announce(name, net, 'blackjack')
+			nets.append((s['name'], s['net'], s['user_id']))
+	for name, net, user_id in nets:
+		chat.announce(name, net, 'blackjack', user_id)
 	t.phase    = 'done'
 	t.active   = None
 	t.deadline = None

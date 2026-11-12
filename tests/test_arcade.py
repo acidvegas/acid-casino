@@ -25,7 +25,21 @@ import app
 import arcade
 import blackjack
 import chat
+import slots
 import storage
+
+
+class SyncThread:
+	'''Stand-in for threading.Thread that runs the target right away, so background sends can be checked.'''
+
+	def __init__(self, target, args=(), daemon=True):
+		self.run = lambda: target(*args)
+
+	def start(self):
+		self.run()
+
+
+SYNC = types.SimpleNamespace(Thread=SyncThread)
 
 
 class StopLoop(Exception):
@@ -64,6 +78,24 @@ class TestArcade(unittest.TestCase):
 		patch = mock.patch.object(arcade, 'session', return_value={'user_id': user_id, 'username': username, 'admin': False})
 		patch.start()
 		self.addCleanup(patch.stop)
+
+	def test_bigwin_event(self):
+		with mock.patch.object(arcade, 'event') as event, mock.patch.object(chat, 'threading', SYNC):
+			chat.announce('lucky', chat.BIG_WIN, 'blackjack', 42)
+			chat.announce('lucky', chat.BIG_WIN - 1, 'poker', 42)
+			chat.announce('lucky', -chat.BIG_WIN, 'poker', 42)
+			chat.announce('bot', chat.BIG_WIN * 2, 'poker', None)
+		event.assert_called_once_with(42, 'bigwin', 'won $100,000 at blackjack')
+
+	def test_bigwin_from_slots(self):
+		with storage.DB_LOCK, storage.db_connect() as c:
+			user_id = c.execute('INSERT INTO users(username, password_hash, created_at, balance) VALUES(?, ?, 0, ?)', ('spinner', '', 100_000)).lastrowid
+		with mock.patch.object(arcade, 'event') as event, mock.patch.object(chat, 'threading', SYNC), mock.patch.object(slots, 'line_pay', return_value=(1_000, 5)), mock.patch.object(hub, 'cover', return_value=10 ** 15):
+			result = slots.spin(user_id, 'spinner', 100_000)
+		net = result['payout'] - 100_000
+		event.assert_called_once_with(user_id, 'bigwin', f'won {storage.money(net)} at slots')
+		with storage.DB_LOCK, storage.db_connect() as c:
+			storage.delete_user(c, user_id)
 
 	def test_captcha_proxied(self):
 		with mock.patch.object(arcade, 'captcha', return_value={'captcha_id': 'c1', 'svg': '<svg/>'}):
@@ -136,6 +168,23 @@ class TestArcade(unittest.TestCase):
 			self.assertEqual(self.client.get('/auth/me', base_url='https://casino.supernets.org').get_json()['arcade_public_url'], 'https://arcade.supernets.org')
 			self.assertEqual(self.client.get('/auth/me', base_url='https://casino.acid.vegas').get_json()['arcade_public_url'], 'https://arcade.acid.vegas')
 
+	def test_presence(self):
+		def stop(_):
+			raise StopLoop()
+
+		now = time.time()
+		with mock.patch.dict(hub.SUBS, {'q1': 5, 'q2': None, 'q3': 5}, clear=True), mock.patch.dict(hub.SEEN, {7: now - 10, 8: now - 300}, clear=True), mock.patch.object(arcade, 'presence') as presence, mock.patch.object(app, 'time', types.SimpleNamespace(time=time.time, sleep=stop)):
+			with self.assertRaises(StopLoop):
+				app.presence_loop()
+			presence.assert_called_once_with([5, 7])
+			hub.SUBS.clear()
+			hub.SEEN.clear()
+			presence.reset_mock()
+			presence.side_effect = arcade.ArcadeDown('refused') # printed, the loop carries on to its sleep
+			with self.assertRaises(StopLoop):
+				app.presence_loop()
+			presence.assert_called_once_with([])
+
 	def test_rate_limit_passed_on(self):
 		for path, fn, body in (('/auth/login', 'login', {'username': 'x', 'password': 'y'}), ('/auth/signup', 'signup', {'username': 'x', 'password': 'password1'})):
 			with mock.patch.object(arcade, fn, side_effect=arcade.ArcadeError('too many tries, wait a few minutes', 429)):
@@ -192,18 +241,12 @@ class TestArcade(unittest.TestCase):
 		self.client.get('/wallet', headers={'X-Auth-Token': 't'})
 		with storage.DB_LOCK, storage.db_connect() as c:
 			c.execute('UPDATE users SET balance=? WHERE id=9006', (10_000_000_000_000,))
-
-		class SyncThread:
-			def __init__(self, target, args, daemon):
-				self.run = lambda: target(*args)
-
-			def start(self):
-				self.run()
-
-		with mock.patch.object(arcade, 'push_stats') as push, mock.patch.object(app, 'threading', types.SimpleNamespace(Thread=SyncThread)):
+		with mock.patch.object(arcade, 'push_stats') as push, mock.patch.object(arcade, 'event') as event, mock.patch.object(app, 'threading', SYNC), mock.patch.object(chat, 'threading', SYNC):
 			app.house_tick()
+			app.house_tick() # already in the hall of fame, so no second event
 		user_id, main, stats = push.call_args.args
 		self.assertEqual((user_id, main, stats['Toppled the house']), (9006, 10_000_000_000_000, 1))
+		event.assert_called_once_with(9006, 'record', 'toppled the house')
 		with storage.DB_LOCK, storage.db_connect() as c:
 			storage.delete_user(c, 9006)
 
@@ -226,6 +269,12 @@ class TestArcade(unittest.TestCase):
 
 
 class TestStandalone(unittest.TestCase):
+	def test_no_events(self):
+		with mock.patch.object(arcade, 'event') as event, mock.patch.object(chat, 'threading', SYNC):
+			chat.announce('lucky', chat.BIG_WIN, 'slots', 42)
+			chat.event(42, 'record', 'toppled the house')
+		event.assert_not_called()
+
 	def test_no_cookie(self):
 		client = app.app.test_client()
 		with storage.DB_LOCK, storage.db_connect() as c:

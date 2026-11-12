@@ -145,7 +145,7 @@ def spin(user_id: int, name: str, bet: int) -> dict:
 			bal = credit(c, user_id, payout, bet, 'slots', f'won {money(payout)}')
 		house_move(c, bet - payout)
 		wager(c, user_id, bet)
-	chat.announce(name, payout - bet, 'slots')
+	chat.announce(name, payout - bet, 'slots', user_id)
 	return {'stops': stops, 'grid': grid, 'wins': wins, 'payout': payout, 'balance': bal}
 
 

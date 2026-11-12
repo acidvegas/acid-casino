@@ -260,7 +260,7 @@ def finish(table: Table):
 	for s, p in h['players'].items():
 		st = table.seats[s]
 		if st and st['user_id'] and st['stack'] != p['start']:
-			chat.announce(st['name'], st['stack'] - p['start'], 'poker')
+			chat.announce(st['name'], st['stack'] - p['start'], 'poker', st['user_id'])
 	h['street']   = 'done'
 	h['to_act']   = None
 	table.next_at = time.time() + BETWEEN
