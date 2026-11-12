@@ -9,6 +9,8 @@
 	<meta name="apple-mobile-web-app-capable" content="yes">
 	<meta name="mobile-web-app-capable" content="yes">
 	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+	<meta name="application-name" content="acid casino">
+	<meta name="color-scheme" content="dark">
 	<meta name="theme-color" content="#000000">
 	<title>acid casino - blackjack, poker and slots with play chips</title>
 	<meta name="description" content="Play multiplayer blackjack, no-limit Texas Hold'em and slots for free with play chips. Every account starts with $1,000. Real casino rules, no real money.">
@@ -18,7 +20,17 @@
 	<meta property="og:title" content="acid casino">
 	<meta property="og:description" content="Multiplayer blackjack, poker and slots with play chips. Free and open source.">
 	<meta property="og:url" content="{{ url }}">
-	<meta name="twitter:card" content="summary">
+	<meta property="og:image" content="{{ url }}static/og.png">
+	<meta property="og:image:width" content="1200">
+	<meta property="og:image:height" content="630">
+	<meta property="og:image:alt" content="acid casino: playing cards, chips and a slot reel">
+	<meta property="og:locale" content="en_US">
+	<meta name="twitter:card" content="summary_large_image">
+	<meta name="twitter:title" content="acid casino">
+	<meta name="twitter:description" content="Multiplayer blackjack, poker and slots with play chips. Free and open source.">
+	<meta name="twitter:image" content="{{ url }}static/og.png">
+	<meta name="twitter:image:alt" content="acid casino: playing cards, chips and a slot reel">
+	<script type="application/ld+json">{{ ld|safe }}</script>
 	<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}?v={{ cache_v }}">
 	<link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}?v={{ cache_v }}">
 	<link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}?v={{ cache_v }}">

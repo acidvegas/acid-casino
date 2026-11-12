@@ -27,6 +27,7 @@ app = Flask(__name__)
 
 CACHE_VERSION = int(time.time())
 PROXIES       = int(os.environ.get('CASINO_PROXIES', '0')) # reverse proxies in front of the app, so the real client IP is used
+PUBLIC_URL    = os.environ.get('CASINO_PUBLIC_URL', '').rstrip('/') # main public address for canonical and share links, e.g. https://casino.acid.vegas
 OWN_MAX       = 3    # tables one player can have open at once
 PING_EVERY    = 15   # seconds between keep-alive comments on an idle event stream
 STATS_EVERY   = 30   # seconds between pushes of a player's summary to acid-arcade-db
@@ -175,6 +176,12 @@ def presence_loop():
 		time.sleep(PRESENT_EVERY)
 
 
+def public_root() -> str:
+	'''Return the public address with a trailing slash: CASINO_PUBLIC_URL when set, otherwise the request host.'''
+
+	return PUBLIC_URL + '/' if PUBLIC_URL else request.url_root
+
+
 def reply(table, user_id: int, error: str = None) -> tuple:
 	'''Answer a table action with the new table view, or the error, and wake the watchers.'''
 
@@ -239,7 +246,24 @@ def stats_push(row: dict):
 def index():
 	'''Serve the page.'''
 
-	return render_template('index.html', cache_v=CACHE_VERSION, url=request.url_root)
+	url = public_root()
+	ld  = {
+		'@context'           : 'https://schema.org',
+		'@type'              : ['VideoGame', 'WebApplication'],
+		'name'               : 'acid casino',
+		'url'                : url,
+		'description'        : 'Multiplayer blackjack, no-limit Texas Hold\'em and slots with play chips. Every account starts with $1,000. Real casino rules, no real money.',
+		'image'              : url + 'static/og.png',
+		'applicationCategory': 'GameApplication',
+		'operatingSystem'    : 'Any',
+		'genre'              : ['Casino', 'Card game', 'Blackjack', 'Poker', 'Slots'],
+		'gamePlatform'       : 'Web browser',
+		'playMode'           : ['SinglePlayer', 'MultiPlayer'],
+		'isAccessibleForFree': True,
+		'offers'             : {'@type': 'Offer', 'price': '0', 'priceCurrency': 'USD'},
+		'author'             : {'@type': 'Person', 'name': 'acidvegas', 'url': 'https://github.com/acidvegas'},
+	}
+	return render_template('index.html', cache_v=CACHE_VERSION, url=url, ld=json.dumps(ld).replace('</', '<\\/'))
 
 
 @app.errorhandler(arcade.ArcadeDown)
@@ -568,14 +592,14 @@ def repay_debt(user_id: int, _: str):
 def robots():
 	'''Let crawlers in and point them at the sitemap.'''
 
-	return Response(f'User-agent: *\nAllow: /\nSitemap: {request.url_root}sitemap.xml\n', mimetype='text/plain')
+	return Response(f'User-agent: *\nAllow: /\nSitemap: {public_root()}sitemap.xml\n', mimetype='text/plain')
 
 
 @app.route('/sitemap.xml')
 def sitemap():
 	'''List the home page, the only page there is.'''
 
-	return Response(f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>{request.url_root}</loc></url></urlset>\n', mimetype='application/xml')
+	return Response(f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>{public_root()}</loc></url></urlset>\n', mimetype='application/xml')
 
 
 @app.route('/slots/info')

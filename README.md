@@ -63,6 +63,8 @@ CASINO_BIND=127.0.0.1 ./setup.sh
 
 The app listens on port 20005. Set `CASINO_PROXIES=1` when it runs behind a reverse proxy like nginx so the real client address is used.
 
+Set `CASINO_PUBLIC_URL` *(e.g. `https://casino.acid.vegas`)* when the casino is served on more than one domain, so the canonical link, share cards, robots.txt and sitemap all point at the main one. Unset, they use whatever host the request came in on.
+
 For development:
 
 ```bash

@@ -2,7 +2,9 @@
 # acid-casino - Developed by acidvegas in Python (https://github.com/acidvegas)
 # tests/test_arcade.py
 
+import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -288,6 +290,34 @@ class TestStandalone(unittest.TestCase):
 		self.assertEqual(client.get('/auth/sso').status_code, 404)
 		with storage.DB_LOCK, storage.db_connect() as c:
 			storage.delete_user(c, user_id)
+
+
+
+class TestSeo(unittest.TestCase):
+	def page(self, base: str) -> tuple:
+		'''Return (canonical, og:url, og:image, parsed JSON-LD) from the page as served to base.'''
+
+		html = app.app.test_client().get('/', base_url=base).get_data(as_text=True)
+		find = lambda pattern: re.search(pattern, html).group(1)
+		return find(r'<link rel="canonical" href="([^"]+)">'), find(r'<meta property="og:url" content="([^"]+)">'), find(r'<meta property="og:image" content="([^"]+)">'), json.loads(find(r'<script type="application/ld\+json">(.+?)</script>'))
+
+	def test_public_url(self):
+		with mock.patch.object(app, 'PUBLIC_URL', 'https://casino.acid.vegas'):
+			canonical, og_url, og_image, ld = self.page('https://casino.supernets.org')
+			client = app.app.test_client()
+			robots  = client.get('/robots.txt', base_url='https://casino.supernets.org').get_data(as_text=True)
+			sitemap = client.get('/sitemap.xml', base_url='https://casino.supernets.org').get_data(as_text=True)
+		self.assertEqual((canonical, og_url, ld['url']), ('https://casino.acid.vegas/',) * 3)
+		self.assertEqual((og_image, ld['image']), ('https://casino.acid.vegas/static/og.png',) * 2)
+		self.assertEqual(ld['@type'], ['VideoGame', 'WebApplication'])
+		self.assertIn('Sitemap: https://casino.acid.vegas/sitemap.xml', robots)
+		self.assertIn('<loc>https://casino.acid.vegas/</loc>', sitemap)
+
+	def test_request_host(self):
+		with mock.patch.object(app, 'PUBLIC_URL', ''):
+			canonical, og_url, og_image, ld = self.page('https://casino.supernets.org')
+		self.assertEqual((canonical, og_url, ld['url']), ('https://casino.supernets.org/',) * 3)
+		self.assertEqual(og_image, 'https://casino.supernets.org/static/og.png')
 
 
 
