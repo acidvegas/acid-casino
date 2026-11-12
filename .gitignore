@@ -1,0 +1,7 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Runtime data (CASINO_DATA_DIR defaults to data/)
+data/
