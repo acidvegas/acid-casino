@@ -19,13 +19,14 @@ import chat
 import hub
 import poker
 import slots
-from auth import USERNAME_RE, captcha_create, captcha_verify, create_session, delete_session, mirror_user, request_token, request_user, session_user
+from auth import USERNAME_RE, attempt, blocked, captcha_create, captcha_verify, create_session, delete_session, mirror_user, request_token, request_user, session_user
 from storage import CREDIT_TIERS, DB_LOCK, DEBT_CAP, HOUSE_START, LATE_AFTER, LATE_COST, LOAN_AGE, LOAN_FREEZE, LOAN_MIN, LOAN_WAGERED, MAXED_COST, PAID_FAST, PAID_OK, REFILL_AMOUNT, REFILL_UNDER, REFILL_WAIT, REPAY_SHARE, SCORE_RANGE, START_BALANCE, TIPS, accrue, borrow, db_connect, delete_user, fame, house_balance, init_db, leaderboard, money, prune_sessions, refill_request, refund_bets, rename_user, repay, signup_allowed, summaries, tip, wallet
 
 
 app = Flask(__name__)
 
 CACHE_VERSION = int(time.time())
+DUMMY_HASH    = generate_password_hash(os.urandom(16).hex()) # checked against for unknown usernames, so login takes as long either way
 PROXIES       = int(os.environ.get('CASINO_PROXIES', '0')) # reverse proxies in front of the app, so the real client IP is used
 PUBLIC_URL    = os.environ.get('CASINO_PUBLIC_URL', '').rstrip('/') # main public address for canonical and share links, e.g. https://casino.acid.vegas
 OWN_MAX       = 3    # tables one player can have open at once
@@ -289,7 +290,12 @@ def arcade_error(e: arcade.ArcadeError) -> tuple:
 def auth_captcha():
 	'''Return a new captcha.'''
 
-	return jsonify(arcade.captcha() if arcade.enabled() else captcha_create())
+	if arcade.enabled():
+		return jsonify(arcade.captcha())
+	if blocked('captcha', request.remote_addr):
+		return api_error('too many captchas, try again in a minute', 429)
+	attempt('captcha', request.remote_addr)
+	return jsonify(captcha_create())
 
 
 @app.route('/auth/login', methods=['POST'])
@@ -303,9 +309,14 @@ def auth_login():
 		resp = jsonify({'token': user['token'], 'username': user['username']})
 		arcade.set_cookie(resp, request.host, user['token'])
 		return resp
+	name = (data.get('username') or '').lower()
+	if blocked('account', name) or blocked('ip', request.remote_addr):
+		return api_error('too many failed logins, try again in 15 minutes', 429)
 	with db_connect() as c:
 		row = c.execute('SELECT id, username, password_hash FROM users WHERE username=?', (data.get('username') or '',)).fetchone()
-	if not row or not check_password_hash(row['password_hash'], data.get('password') or ''):
+	if not check_password_hash(row['password_hash'] if row else DUMMY_HASH, data.get('password') or '') or not row: # hash even for unknown names, so timing doesn't reveal which exist
+		attempt('account', name)
+		attempt('ip', request.remote_addr)
 		return api_error('wrong username or password', 401)
 	return jsonify({'token': create_session(row['id']), 'username': row['username']})
 

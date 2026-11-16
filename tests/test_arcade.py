@@ -344,6 +344,47 @@ class TestArcade(unittest.TestCase):
 
 
 class TestStandalone(unittest.TestCase):
+	def setUp(self):
+		auth.ATTEMPTS.clear()
+
+	def test_captcha_cap(self):
+		auth.CAPTCHAS.clear()
+		with mock.patch.object(auth, 'CAPTCHA_MAX', 3):
+			first = [auth.captcha_create()['captcha_id'] for _ in range(5)]
+		self.assertEqual(list(auth.CAPTCHAS), first[2:])
+		auth.CAPTCHAS.clear()
+
+	def test_captcha_no_text(self):
+		svg = auth.captcha_render_svg(auth.CAPTCHA_CHARS)
+		self.assertNotIn('<text', svg)
+		self.assertIn('<path', svg)
+
+	def test_captcha_rate_limit(self):
+		client = app.app.test_client()
+		ip     = {'X-Forwarded-For': '203.0.113.30'}
+		for _ in range(30):
+			self.assertEqual(client.get('/auth/captcha', headers=ip).status_code, 200)
+		self.assertEqual(client.get('/auth/captcha', headers=ip).status_code, 429)
+		self.assertEqual(client.get('/auth/captcha', headers={'X-Forwarded-For': '203.0.113.31'}).status_code, 200)
+
+	def test_login_limits(self):
+		client = app.app.test_client()
+		with storage.DB_LOCK, storage.db_connect() as c:
+			ids = [c.execute('INSERT INTO users(username, password_hash, created_at, balance) VALUES(?, ?, 0, ?)', (name, generate_password_hash('password1'), 100_000)).lastrowid for name in ('locked', 'other')]
+		for i in range(10):
+			res = client.post('/auth/login', json={'username': 'Locked', 'password': 'wrong'}, headers={'X-Forwarded-For': f'203.0.113.{40 + i}'})
+			self.assertEqual(res.status_code, 401)
+		res = client.post('/auth/login', json={'username': 'locked', 'password': 'password1'}, headers={'X-Forwarded-For': '203.0.113.60'})
+		self.assertEqual(res.status_code, 429)
+		self.assertIn('error', res.get_json())
+		self.assertEqual(client.post('/auth/login', json={'username': 'other', 'password': 'password1'}, headers={'X-Forwarded-For': '203.0.113.60'}).status_code, 200)
+		for i in range(30):
+			client.post('/auth/login', json={'username': f'nobody{i}', 'password': 'wrong'}, headers={'X-Forwarded-For': '203.0.113.70'})
+		self.assertEqual(client.post('/auth/login', json={'username': 'other', 'password': 'password1'}, headers={'X-Forwarded-For': '203.0.113.70'}).status_code, 429)
+		with storage.DB_LOCK, storage.db_connect() as c:
+			for user_id in ids:
+				storage.delete_user(c, user_id)
+
 	def test_no_events(self):
 		with mock.patch.object(arcade, 'event') as event, mock.patch.object(chat, 'threading', SYNC):
 			chat.announce('lucky', chat.BIG_WIN, 'slots', 42)
