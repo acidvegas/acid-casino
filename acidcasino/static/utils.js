@@ -4,6 +4,8 @@
 const $        = (id) => document.getElementById(id);
 const AUTH_KEY = 'acidcasino_auth';
 const SUITS    = { s: '♠', h: '♥', d: '♦', c: '♣' };
+const SUIT_NAMES = { s: 'spades', h: 'hearts', d: 'diamonds', c: 'clubs' };
+const RANK_NAMES = { A: 'ace', K: 'king', Q: 'queen', J: 'jack', T: '10' };
 const CHIPS    = [[100, '#cfe9d8'], [500, '#ff3b5c'], [2500, '#1fd862'], [10000, '#0b0f0c'], [50000, '#9b5cff'], [100000, '#d4ff3a'], [500000, '#ff9f1c'], [1000000, '#38c8ff'], [2500000, '#ff5ed1']];
 const SYM_HTML = { C: '🍒', L: '🍋', O: '🍊', P: '🍇', B: '🔔', R: '<span class="txt bar">BAR</span>', 7: '<span class="txt seven">7</span>', W: '<span class="txt wild">WILD</span>', S: '⭐' };
 const BJ_SPOTS = { wide: [[11, 72], [30, 88], [50, 95], [70, 88], [89, 72]], tall: [[12, 74], [31, 85], [50, 94], [69, 85], [88, 74]], solo: [[50, 95]] };
@@ -68,6 +70,26 @@ function esc(s) {
 	return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
 }
 
+function cardName(code) {
+	// A card spoken out loud: "queen of hearts", or face down
+	return code ? `${RANK_NAMES[code[0]] || code[0]} of ${SUIT_NAMES[code[1]]}` : 'face down card';
+}
+
+let srQueue = [];
+function announce(text) {
+	// Read something the game just showed on screen to screen reader users, batching what lands together
+	if (!text) return;
+	if (!srQueue.length) { $('sr-live').textContent = ''; setTimeout(() => { $('sr-live').textContent = srQueue.join('. '); srQueue = []; }, 100); }
+	srQueue.push(text);
+}
+
+function plain(html) {
+	// The text of an HTML snippet, for announcing a message that is drawn with markup
+	const d = document.createElement('div');
+	d.innerHTML = html;
+	return d.textContent;
+}
+
 function now() {
 	return (Date.now() + offset) / 1000;
 }
@@ -92,6 +114,7 @@ let toastTimer = null;
 function toast(text) {
 	const t = $('toast');
 	t.textContent = text;
+	announce(text);
 	t.classList.remove('hidden');
 	t.style.animation = 'none'; void t.offsetWidth; t.style.animation = '';
 	clearTimeout(toastTimer);
@@ -116,6 +139,8 @@ function duration(sec) {
 function cardEl(code) {
 	const el = document.createElement('div');
 	el.dataset.code = code || '';
+	el.setAttribute('role', 'img');
+	el.setAttribute('aria-label', cardName(code));
 	if (!code) { el.className = 'card back'; return el; }
 	const rank = code[0] === 'T' ? '10' : code[0], suit = code[1];
 	el.className = 'card' + (suit === 'h' || suit === 'd' ? ' red' : '');
@@ -128,6 +153,8 @@ function paintCard(el, code) {
 	const face = cardEl(code);
 	el.classList.toggle('red', face.classList.contains('red'));
 	el.innerHTML = face.innerHTML;
+	el.setAttribute('role', 'img');
+	el.setAttribute('aria-label', face.getAttribute('aria-label'));
 }
 
 // Keep the cards already on screen and only animate the new ones, flying in from a source element
@@ -432,7 +459,7 @@ function renderLobby() {
 		return `<a class="trow ${t.mine ? 'mine' : ''}" href="#/t/${t.id}" style="animation-delay:${first ? i * 0.03 : 0}s">
 			<span class="glyph ${t.game === 'poker' ? 'pk' : ''}">${t.game === 'poker' ? '♠' : '21'}</span>
 			<span class="info"><div class="tname">${esc(t.name)}${tags}</div><div class="tsub"><b>${t.stakes}</b> · ${who}</div></span>
-			<span class="pips">${pips}</span>
+			<span class="pips" role="img" aria-label="${Math.min(t.people.length + t.bots, t.seats)} of ${t.seats} seats taken">${pips}</span>
 			<span class="btn small ${t.mine ? 'primary' : ''}">${t.mine ? 'Back' : t.taken >= t.seats ? 'Watch' : 'Join'}</span>
 		</a>`;
 	}).join('');
@@ -747,9 +774,12 @@ function renderBlackjack() {
 	$('bj-leave').classList.toggle('hidden', !mine);
 	$('bj-react').classList.toggle('hidden', !mine);
 	$('bj-shoe-left').textContent = t.shoe_left;
+	$('bj-shoe').setAttribute('aria-label', `Shoe, ${t.shoe_left} cards left`);
+	const spoken = (h) => h.result ? `${h.total}, ${RESULT[h.result]}` : `${h.soft && h.total < 21 ? 'soft ' : ''}${h.total}${h.doubled ? ', doubled' : ''}`;
 
 	// Dealer
 	syncCards($('bj-dealer'), t.dealer, $('bj-shoe'));
+	if (prev && !prev.dealer.length && t.dealer.length) announce(`Dealer shows ${cardName(t.dealer[0])}`);
 	const dt = $('bj-dealer-total');
 	dt.classList.toggle('hidden', !t.dealer.length);
 	dt.textContent = t.dealer_total;
@@ -763,6 +793,7 @@ function renderBlackjack() {
 		t.seats.forEach((_, i) => {
 			const el = document.createElement('div');
 			el.className = 'bj-seat';
+			el.setAttribute('role', 'group');
 			el.style.left = spots[i][0] + '%';
 			el.style.top  = spots[i][1] + '%';
 			el.innerHTML = '<div class="bj-hands"></div><div class="bet-spot"><div class="stack"></div><span class="amt"></span></div><div class="plate"><div class="nm"></div><div class="sub"></div></div>';
@@ -785,6 +816,7 @@ function renderBlackjack() {
 			spot.querySelector('.stack').innerHTML = '';
 			spot.querySelector('.amt').textContent = '';
 			plate.querySelectorAll('.timer, .ready-dot').forEach((x) => x.remove());
+			el.setAttribute('aria-label', `Seat ${i + 1}, empty${t.me === null ? ', sit here' : ''}`);
 			return;
 		}
 		plate.querySelector('.nm').innerHTML = who(s.name, s.user_id);
@@ -810,6 +842,7 @@ function renderBlackjack() {
 		plate.querySelectorAll('.timer, .ready-dot').forEach((x) => x.remove());
 		if (t.active && t.active[0] === i && t.deadline) plate.insertAdjacentHTML('beforeend', `<div class="timer" data-deadline="${t.deadline}" data-total="${t.time_total}"></div>`);
 		if (t.phase === 'betting' && s.ready) plate.insertAdjacentHTML('beforeend', '<span class="ready-dot"></span>');
+		el.setAttribute('aria-label', [s.name + (i === t.me ? ' (you)' : ''), stake ? `bet ${money(stake)}` : '', ...s.hands.map((h) => `hand ${spoken(h)}`), sub.textContent, t.active && t.active[0] === i ? (i === t.me ? 'your turn' : 'their turn') : ''].filter(Boolean).join(', '));
 	});
 
 	// Message on the felt
@@ -821,12 +854,16 @@ function renderBlackjack() {
 	else if (t.phase === 'dealer') msg = 'Dealer plays';
 	else if (t.phase === 'done') msg = t.dealer_total > 21 ? 'Dealer busts' : t.dealer.length === 2 && t.dealer_total === 21 ? 'Dealer blackjack' : `Dealer has ${t.dealer_total}`;
 	const key = `${t.round}-${t.phase}-${t.active}`;
-	if (st.dataset.key !== key) { st.dataset.key = key; st.classList.remove('pop'); void st.offsetWidth; st.classList.add('pop'); }
+	const myHands = mine && t.phase !== 'done' ? mine.hands.map(spoken).join(', and ') : '';
+	const prevMine = prev && prev.me !== null ? prev.seats[prev.me] : null;
+	if (myHands && myHands !== (prevMine ? prevMine.hands.map(spoken).join(', and ') : '')) announce(`You have ${myHands}`);
+	if (st.dataset.key !== key) { st.dataset.key = key; st.classList.remove('pop'); void st.offsetWidth; st.classList.add('pop'); announce(t.phase === 'betting' ? (t.seats.some((s) => s) ? 'Place your bets' : '') : plain(msg)); }
 	st.innerHTML = msg;
 
 	// Effects when a round ends
 	if (prev && prev.phase !== 'done' && t.phase === 'done' && mine && mine.net !== null) {
 		const el = box.children[t.me];
+		announce(mine.net > 0 ? `You won ${money(mine.net)}` : mine.net < 0 ? `You lost ${money(-mine.net)}` : 'Push, your bet comes back');
 		floatNum(el, mine.net);
 		if (mine.net > 0) burst(el.querySelector('.bet-spot'), mine.hands.some((h) => h.result === 'blackjack') ? 30 : 16);
 	}
@@ -873,7 +910,7 @@ function renderChips() {
 	const sig = chips.map((c) => c[0]).join();
 	if (rack.dataset.sig !== sig) {
 		rack.dataset.sig = sig;
-		rack.innerHTML = chips.map(([v, c]) => `<button class="chip" style="--c:${c}" data-v="${v}">${money(v).replace('$', '$').replace(',000', 'k')}</button>`).join('');
+		rack.innerHTML = chips.map(([v, c]) => `<button class="chip" style="--c:${c}" data-v="${v}" aria-label="Add ${money(v)}">${money(v).replace('$', '$').replace(',000', 'k')}</button>`).join('');
 		rack.querySelectorAll('.chip').forEach((b) => { b.onclick = () => { bjBet = Math.min(bjBet + Number(b.dataset.v), t.max_bet); sendBet(false); }; });
 	}
 	const avail = (me ? me.balance : 0) + (mine ? mine.bet : 0);
@@ -932,7 +969,7 @@ function renderPoker() {
 	t.seats.forEach((s, i) => {
 		const [x, y] = spots[(i - base + 6) % 6];
 		let el = felt.querySelector(`.pk-seat[data-i="${i}"]`);
-		if (!el) { el = document.createElement('div'); el.className = 'pk-seat'; el.dataset.i = i; el.innerHTML = '<div class="hole"></div><div class="plate"></div>'; felt.appendChild(el); }
+		if (!el) { el = document.createElement('div'); el.className = 'pk-seat'; el.dataset.i = i; el.setAttribute('role', 'group'); el.innerHTML = '<div class="hole"></div><div class="plate"></div>'; felt.appendChild(el); }
 		el.style.left = x + '%';
 		el.style.top  = y + '%';
 		const plate = el.querySelector('.plate'), hole = el.querySelector('.hole');
@@ -945,6 +982,7 @@ function renderPoker() {
 			plate.innerHTML = can ? (pkSeat === i ? 'Your seat' : 'Sit here') : 'Empty';
 			plate.onclick = can ? () => { pkSeat = i; prevTable = table; renderPoker(); } : null;
 			hole.innerHTML = '';
+			el.setAttribute('aria-label', `Seat ${i + 1}, ${can ? (pkSeat === i ? 'your seat' : 'empty, sit here') : 'empty'}`);
 			return;
 		}
 		plate.onclick = null;
@@ -959,6 +997,10 @@ function renderPoker() {
 		el.querySelectorAll('.dealer-btn, .hname').forEach((x) => x.remove());
 		if (t.button === i && h) el.insertAdjacentHTML('beforeend', '<div class="dealer-btn">D</div>');
 		if (s.hand_name) el.insertAdjacentHTML('beforeend', `<div class="hname">${esc(s.hand_name)}</div>`);
+		el.setAttribute('aria-label', [s.name + (i === t.me ? ' (you)' : ''), s.allin && h && h.street !== 'done' ? 'all in' : money(s.stack), t.button === i && h ? 'dealer' : '', s.folded ? 'folded' : '', s.away ? 'sitting out' : '', s.said, s.bet ? `bet ${money(s.bet)}` : '', h && h.to_act === i ? 'to act' : '', winners.has(i) ? 'winner' : '', s.hand_name].filter(Boolean).join(', '));
+		const ps = prev && !newHand ? prev.seats[i] : null;
+		if (prev && s.said && (!ps || ps.said !== s.said)) announce(`${s.name}: ${s.said}`);
+		if (prev && i === t.me && s.cards && s.cards[0] && (!ps || String(ps.cards) !== String(s.cards))) announce(`Your cards: ${s.cards.map(cardName).join(', ')}`);
 		if (s.bet) { // keep the chip that is already there so it only animates in once
 			let b = felt.querySelector(`.pk-bet[data-i="${i}"]`);
 			if (!b) { b = document.createElement('div'); b.className = 'pk-bet'; b.dataset.i = i; felt.appendChild(b); }
@@ -972,10 +1014,11 @@ function renderPoker() {
 	const board = $('pk-board');
 	if (newHand) board.innerHTML = '';
 	syncCards(board, h ? h.board : [], center);
+	if (prev && h && h.board.length > (newHand || !prev.hand ? 0 : prev.hand.board.length)) announce(`Board: ${h.board.map(cardName).join(', ')}`);
 	$('pk-pot').textContent = h && h.pot ? `POT ${money(h.pot)}` : '';
 	const res = $('pk-result');
 	const text = h && h.street === 'done' ? h.results.map((r) => `${r.seats.map((s) => t.seats[s] ? t.seats[s].name : '?').join(' & ')} ${r.seats.length > 1 ? 'split' : 'wins'} ${money(r.amount)}${r.hand ? ' · ' + r.hand : ''}`).join('  |  ') : !h ? pkWaitText() : '';
-	if (res.textContent !== text) { res.textContent = text; res.classList.remove('pop'); void res.offsetWidth; if (text && h) res.classList.add('pop'); }
+	if (res.textContent !== text) { res.textContent = text; if (text && h) announce(text); res.classList.remove('pop'); void res.offsetWidth; if (text && h) res.classList.add('pop'); }
 	if (prev && prev.hand && prev.hand.street !== 'done' && h && h.street === 'done' && t.me !== null && winners.has(t.me)) {
 		const el = felt.querySelector(`.pk-seat[data-i="${t.me}"]`);
 		burst(el, 22);
@@ -1029,7 +1072,7 @@ function renderPkDock() {
 		r.dataset.key = key;
 		r.min = opt.min_to; r.max = opt.max_to; r.step = t.sb;
 		setRaise(opt.min_to);
-		if (pkBuzz !== key) { pkBuzz = key; if (navigator.vibrate) navigator.vibrate(50); }
+		if (pkBuzz !== key) { pkBuzz = key; if (navigator.vibrate) navigator.vibrate(50); announce(`Your turn, ${opt.check ? 'check' : `call ${money(opt.call)}`}`); }
 	}
 }
 
@@ -1066,10 +1109,17 @@ async function loadSlots() {
 	for (let r = 0; r < 5; r++) {
 		const reel = document.createElement('div');
 		reel.className = 'reel';
+		reel.setAttribute('role', 'img');
 		reel.innerHTML = `<div class="strip">${[0, 1, 2].map((row) => `<div class="sym">${SYM_HTML[slotInfo.strips[r][row]]}</div>`).join('')}</div>`;
 		reels.appendChild(reel);
 	}
+	labelReels(slotInfo.strips.map((strip) => strip.slice(0, 3)));
 	renderSlotBet();
+}
+
+function labelReels(grid) {
+	// Name the three symbols showing on each reel, top to bottom
+	[...$('reels').children].forEach((reel, r) => reel.setAttribute('aria-label', `Reel ${r + 1}: ${grid[r].map((x) => slotInfo.symbols[x]).join(', ')}`));
 }
 
 function slotMax() {
@@ -1144,13 +1194,16 @@ async function spin(auto) {
 		setTimeout(() => { strip.style.filter = ''; }, (0.65 + r * 0.22) * 1000);
 		strip.addEventListener('transitionend', () => { strip.style.transition = 'none'; [...strip.children].slice(3).forEach((e) => e.remove()); done(); }, { once: true });
 	})));
+	labelReels(res.grid);
 	if (res.wins.length) {
 		showWins(res);
+		announce(`Won ${money(res.payout)}, ${$('slot-msg').textContent}`);
 		countUp($('slot-win'), res.payout);
 		if (res.payout >= bet * 10) { $('machine').querySelector('.win-meter').classList.add('big'); burst($('reels'), 40); }
 		else if (res.payout > bet) burst($('slot-win'), 14);
 	} else {
 		$('slot-msg').textContent = 'No win';
+		announce('No win');
 	}
 	setBalance(res.balance);
 	me.balance = res.balance;

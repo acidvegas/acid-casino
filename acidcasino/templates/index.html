@@ -55,16 +55,16 @@
 	<div class="bg-fx" aria-hidden="true"></div>
 
 	<header class="topbar">
-		<a class="logo" href="#/lobby" title="Lobby"><span class="logo-a">ACID</span><span class="logo-s">//</span><span class="logo-b">CASINO</span></a>
+		<a class="logo" href="#/lobby" title="Lobby" aria-label="acid casino lobby"><span class="logo-a">ACID</span><span class="logo-s">//</span><span class="logo-b">CASINO</span></a>
 		<nav class="nav hidden" id="nav">
-			<a href="#/lobby" data-nav="lobby"><svg><use href="#i-home"/></svg><span>Lobby</span></a>
-			<a href="#/slots" data-nav="slots"><span class="nav-glyph">7</span><span>Slots</span></a>
+			<a href="#/lobby" data-nav="lobby" aria-label="Lobby"><svg><use href="#i-home"/></svg><span>Lobby</span></a>
+			<a href="#/slots" data-nav="slots" aria-label="Slots"><span class="nav-glyph">7</span><span>Slots</span></a>
 		</nav>
 		<div class="top-right hidden" id="top-user">
 			<span class="online" id="online" title="Players online"></span>
 			<button class="balance" id="btn-wallet" title="Your chips"><span class="chip-dot"></span><span id="bal">$0</span></button>
-			<button class="icon-btn chat-toggle" id="btn-chat" title="Chat"><svg><use href="#i-chat"/></svg><span class="badge hidden" id="chat-badge"></span></button>
-			<button class="icon-btn" id="btn-account" title="Account"><svg><use href="#i-user"/></svg></button>
+			<button class="icon-btn chat-toggle" id="btn-chat" title="Chat" aria-label="Chat"><svg><use href="#i-chat"/></svg><span class="badge hidden" id="chat-badge"></span></button>
+			<button class="icon-btn" id="btn-account" title="Account" aria-label="Account"><svg><use href="#i-user"/></svg></button>
 		</div>
 	</header>
 
@@ -74,7 +74,7 @@
 			<section class="view" id="view-auth">
 				<div class="auth-wrap">
 					<div class="auth-hero">
-						<div class="hero-cards"><div class="card hero c1"></div><div class="card hero c2"></div><div class="card hero c3"></div></div>
+						<div class="hero-cards" aria-hidden="true"><div class="card hero c1"></div><div class="card hero c2"></div><div class="card hero c3"></div></div>
 						<h1>Blackjack. Hold'em. Slots.</h1>
 						<p>Real casino rules with play chips. Sit at a table with other people or play the house. New accounts start with <b id="start-chips">$1,000</b>.</p>
 					</div>
@@ -84,11 +84,11 @@
 							<button data-mode="signup">Create account</button>
 						</div>
 						<form id="auth-form" autocomplete="on">
-							<input id="auth-user" name="username" placeholder="Username" autocomplete="username" maxlength="16" required>
-							<input id="auth-pass" name="password" type="password" placeholder="Password" autocomplete="current-password" maxlength="128" required>
+							<input id="auth-user" name="username" placeholder="Username" aria-label="Username" autocomplete="username" maxlength="16" required>
+							<input id="auth-pass" name="password" type="password" placeholder="Password" aria-label="Password" autocomplete="current-password" maxlength="128" required>
 							<div class="captcha hidden" id="captcha-box">
-								<div id="captcha-img" title="Tap for a new one"></div>
-								<input id="captcha" placeholder="Type the letters" autocomplete="off" maxlength="5">
+								<div id="captcha-img" title="Tap for a new one" role="img" aria-label="Captcha letters, tap for a new one"></div>
+								<input id="captcha" placeholder="Type the letters" aria-label="Captcha letters" autocomplete="off" maxlength="5">
 							</div>
 							<div class="error" id="auth-error"></div>
 							<button class="btn primary wide" type="submit" id="auth-submit">Sign in</button>
@@ -104,7 +104,7 @@
 				<div class="lobby">
 					<div class="tiles">
 						<div class="tile tile-bj">
-							<div class="tile-art"><div class="card mini" data-c="As"></div><div class="card mini" data-c="Kh"></div></div>
+							<div class="tile-art" aria-hidden="true"><div class="card mini" data-c="As"></div><div class="card mini" data-c="Kh"></div></div>
 							<div class="tile-body">
 								<h2>Blackjack</h2>
 								<p>Up to 5 players against one dealer. Pays 3 to 2.</p>
@@ -115,7 +115,7 @@
 							</div>
 						</div>
 						<div class="tile tile-pk">
-							<div class="tile-art"><div class="card mini" data-c="Qs"></div><div class="card mini" data-c="Qd"></div></div>
+							<div class="tile-art" aria-hidden="true"><div class="card mini" data-c="Qs"></div><div class="card mini" data-c="Qd"></div></div>
 							<div class="tile-body">
 								<h2>Hold'em</h2>
 								<p>No-limit cash tables, 6 seats. Bots fill quiet tables.</p>
@@ -126,7 +126,7 @@
 							</div>
 						</div>
 						<a class="tile tile-sl" href="#/slots">
-							<div class="tile-art slot-art"><span>7</span><span>7</span><span>7</span></div>
+							<div class="tile-art slot-art" aria-hidden="true"><span>7</span><span>7</span><span>7</span></div>
 							<div class="tile-body">
 								<h2>Slots</h2>
 								<p>5 reels, 10 lines, wilds and scatters. 96.5% return.</p>
@@ -149,7 +149,7 @@
 									<button data-filter="blackjack">Blackjack</button>
 									<button data-filter="poker">Poker</button>
 								</div>
-								<form class="code-form" id="code-form"><input id="code-input" placeholder="Code" maxlength="5" autocomplete="off" autocapitalize="none"><button class="btn small" type="submit">Join</button></form>
+								<form class="code-form" id="code-form"><input id="code-input" placeholder="Code" aria-label="Table code" maxlength="5" autocomplete="off" autocapitalize="none"><button class="btn small" type="submit">Join</button></form>
 								<button class="btn primary small" id="btn-create"><svg><use href="#i-plus"/></svg>New table</button>
 							</div>
 							<div class="table-list" id="table-list"></div>
@@ -172,18 +172,18 @@
 			<!-- Blackjack table -->
 			<section class="view game-view hidden" id="view-bj">
 				<div class="game-head">
-					<a class="icon-btn" href="#/lobby" title="Lobby"><svg><use href="#i-back"/></svg></a>
+					<a class="icon-btn" href="#/lobby" title="Lobby" aria-label="Back to lobby"><svg><use href="#i-back"/></svg></a>
 					<div class="game-title"><b id="bj-name"></b><span id="bj-stakes"></span></div>
-					<button class="icon-btn hidden" id="bj-share" title="Copy invite link"><svg><use href="#i-link"/></svg></button>
-					<button class="icon-btn hidden" id="bj-react" title="React or tip the dealer"><svg><use href="#i-smile"/></svg></button>
-					<button class="icon-btn" id="bj-help" title="Rules"><svg><use href="#i-help"/></svg></button>
-					<button class="icon-btn hidden" id="bj-leave" title="Stand up"><svg><use href="#i-exit"/></svg></button>
+					<button class="icon-btn hidden" id="bj-share" title="Copy invite link" aria-label="Copy invite link"><svg><use href="#i-link"/></svg></button>
+					<button class="icon-btn hidden" id="bj-react" title="React or tip the dealer" aria-label="React or tip the dealer"><svg><use href="#i-smile"/></svg></button>
+					<button class="icon-btn" id="bj-help" title="Rules" aria-label="Rules"><svg><use href="#i-help"/></svg></button>
+					<button class="icon-btn hidden" id="bj-leave" title="Stand up" aria-label="Stand up"><svg><use href="#i-exit"/></svg></button>
 				</div>
 				<div class="stage" id="bj-stage">
-					<div class="felt bj-felt" id="bj-felt">
-						<div class="shoe" id="bj-shoe"><div class="shoe-cards"></div><span id="bj-shoe-left"></span></div>
+					<div class="felt bj-felt" id="bj-felt" role="region" aria-label="Blackjack table">
+						<div class="shoe" id="bj-shoe" role="img" aria-label="Shoe"><div class="shoe-cards"></div><span id="bj-shoe-left"></span></div>
 						<div class="dealer-zone">
-							<div class="cards dealer-cards" id="bj-dealer"></div>
+							<div class="cards dealer-cards" id="bj-dealer" role="group" aria-label="Dealer cards"></div>
 							<div class="total-pill hidden" id="bj-dealer-total"></div>
 						</div>
 						<div class="felt-print"><span>BLACKJACK PAYS 3 TO 2</span><small>Dealer stands on all 17s · Insurance pays 2 to 1</small></div>
@@ -202,7 +202,7 @@
 							<div class="bet-amt"><small>BET</small><b id="bj-bet">$0</b></div>
 							<div class="bet-btns">
 								<button class="btn small ghost" id="bj-clear">Clear</button>
-								<button class="btn small ghost" id="bj-double-bet">2×</button>
+								<button class="btn small ghost" id="bj-double-bet" aria-label="Double bet">2×</button>
 								<button class="btn primary" id="bj-deal">Deal</button>
 							</div>
 						</div>
@@ -226,18 +226,18 @@
 			<!-- Poker table -->
 			<section class="view game-view hidden" id="view-pk">
 				<div class="game-head">
-					<a class="icon-btn" href="#/lobby" title="Lobby"><svg><use href="#i-back"/></svg></a>
+					<a class="icon-btn" href="#/lobby" title="Lobby" aria-label="Back to lobby"><svg><use href="#i-back"/></svg></a>
 					<div class="game-title"><b id="pk-name"></b><span id="pk-stakes"></span></div>
-					<button class="icon-btn hidden" id="pk-share" title="Copy invite link"><svg><use href="#i-link"/></svg></button>
-					<button class="icon-btn hidden" id="pk-react" title="React or tip the dealer"><svg><use href="#i-smile"/></svg></button>
-					<button class="icon-btn" id="pk-help" title="Hand rankings"><svg><use href="#i-help"/></svg></button>
-					<button class="icon-btn hidden" id="pk-leave" title="Stand up and cash out"><svg><use href="#i-exit"/></svg></button>
+					<button class="icon-btn hidden" id="pk-share" title="Copy invite link" aria-label="Copy invite link"><svg><use href="#i-link"/></svg></button>
+					<button class="icon-btn hidden" id="pk-react" title="React or tip the dealer" aria-label="React or tip the dealer"><svg><use href="#i-smile"/></svg></button>
+					<button class="icon-btn" id="pk-help" title="Hand rankings" aria-label="Hand rankings"><svg><use href="#i-help"/></svg></button>
+					<button class="icon-btn hidden" id="pk-leave" title="Stand up and cash out" aria-label="Stand up and cash out"><svg><use href="#i-exit"/></svg></button>
 				</div>
 				<div class="stage" id="pk-stage">
-					<div class="felt pk-felt" id="pk-felt">
+					<div class="felt pk-felt" id="pk-felt" role="region" aria-label="Poker table">
 						<div class="pk-center">
 							<div class="pk-pot" id="pk-pot"></div>
-							<div class="cards board" id="pk-board"></div>
+							<div class="cards board" id="pk-board" role="group" aria-label="Board"></div>
 							<div class="pk-result" id="pk-result"></div>
 						</div>
 					</div>
@@ -252,14 +252,14 @@
 						<button class="btn primary" id="pk-back-in">I'm back</button>
 					</div>
 					<div class="pk-play hidden" id="pk-play">
-						<div class="my-hand"><div class="cards my-cards" id="pk-mycards"></div><div class="my-hand-name" id="pk-myhand"></div></div>
+						<div class="my-hand"><div class="cards my-cards" id="pk-mycards" role="group" aria-label="Your cards"></div><div class="my-hand-name" id="pk-myhand"></div></div>
 						<div class="pk-actions hidden" id="pk-actions">
 							<div class="raise-row">
-								<button class="btn tiny ghost" data-preset="0.5">½</button>
-								<button class="btn tiny ghost" data-preset="0.75">¾</button>
-								<button class="btn tiny ghost" data-preset="1">Pot</button>
-								<button class="btn tiny ghost" data-preset="all">Max</button>
-								<input type="range" id="pk-raise">
+								<button class="btn tiny ghost" data-preset="0.5" aria-label="Raise half the pot">½</button>
+								<button class="btn tiny ghost" data-preset="0.75" aria-label="Raise three quarters of the pot">¾</button>
+								<button class="btn tiny ghost" data-preset="1" aria-label="Raise the pot">Pot</button>
+								<button class="btn tiny ghost" data-preset="all" aria-label="Raise the maximum">Max</button>
+								<input type="range" id="pk-raise" aria-label="Raise amount">
 							</div>
 							<div class="act-btns">
 								<button class="btn danger" id="pk-fold">Fold</button>
@@ -275,27 +275,27 @@
 			<!-- Slots -->
 			<section class="view game-view hidden" id="view-slots">
 				<div class="stage slot-stage">
-					<div class="machine" id="machine">
+					<div class="machine" id="machine" role="region" aria-label="Slot machine">
 						<div class="marquee"><span>ACID</span><b>SLOTS</b><span>7</span></div>
 						<div class="reels-wrap">
-							<div class="reels" id="reels"></div>
-							<svg class="lines-svg" id="lines-svg" viewBox="0 0 500 300" preserveAspectRatio="none"></svg>
-							<div class="line-tags" id="line-tags"></div>
+							<div class="reels" id="reels" role="group" aria-label="Reels"></div>
+							<svg class="lines-svg" id="lines-svg" aria-hidden="true" viewBox="0 0 500 300" preserveAspectRatio="none"></svg>
+							<div class="line-tags" id="line-tags" aria-hidden="true"></div>
 						</div>
 						<div class="win-meter"><small>WIN</small><b id="slot-win">$0</b><span id="slot-msg"></span></div>
 					</div>
 				</div>
 				<div class="dock slot-dock">
 					<div class="slot-bet">
-						<button class="step" id="slot-less" title="Smaller bet">−</button>
+						<button class="step" id="slot-less" title="Smaller bet" aria-label="Smaller bet">−</button>
 						<div class="bet-amt"><small>BET</small><b id="slot-bet">$1</b><small class="bet-note" id="slot-bet-note"></small></div>
-						<button class="step" id="slot-more" title="Bigger bet">+</button>
+						<button class="step" id="slot-more" title="Bigger bet" aria-label="Bigger bet">+</button>
 					</div>
 					<button class="spin-btn" id="slot-spin"><span id="slot-spin-label">SPIN</span><small id="slot-spin-sub"></small></button>
 					<div class="slot-side">
 						<div class="auto">
-							<button class="btn" data-auto="5" title="Spin 5 times">5×</button>
-							<button class="btn" data-auto="10" title="Spin 10 times">10×</button>
+							<button class="btn" data-auto="5" title="Spin 5 times" aria-label="Spin 5 times">5×</button>
+							<button class="btn" data-auto="10" title="Spin 10 times" aria-label="Spin 10 times">10×</button>
 						</div>
 						<button class="btn small ghost" id="slot-pays">Pays</button>
 					</div>
@@ -311,20 +311,20 @@
 					<button data-room="feed">Feed</button>
 					<button class="hidden" data-room="table" id="chat-tab-table">Table<span class="badge hidden" id="table-badge"></span></button>
 				</div>
-				<button class="icon-btn chat-close" id="chat-close" title="Close"><svg><use href="#i-x"/></svg></button>
+				<button class="icon-btn chat-close" id="chat-close" title="Close" aria-label="Close chat"><svg><use href="#i-x"/></svg></button>
 			</div>
 			<div class="chat-log" id="chat-log"></div>
 			<ol class="feed hidden" id="feed"><li class="dim">Every win and loss shows up here as it happens</li></ol>
 			<form class="chat-form" id="chat-form">
-				<input id="chat-input" placeholder="Say something" maxlength="300" autocomplete="off">
-				<button class="icon-btn" type="submit" title="Send"><svg><use href="#i-send"/></svg></button>
+				<input id="chat-input" placeholder="Say something" aria-label="Chat message" maxlength="300" autocomplete="off">
+				<button class="icon-btn" type="submit" title="Send" aria-label="Send"><svg><use href="#i-send"/></svg></button>
 			</form>
 		</aside>
 	</div>
 
 	<div class="modal-bg hidden" id="modal-bg">
 		<div class="modal panel" role="dialog" aria-modal="true">
-			<button class="icon-btn modal-close" id="modal-close" title="Close"><svg><use href="#i-x"/></svg></button>
+			<button class="icon-btn modal-close" id="modal-close" title="Close" aria-label="Close"><svg><use href="#i-x"/></svg></button>
 			<div id="modal"></div>
 		</div>
 	</div>
@@ -337,6 +337,7 @@
 	</div>
 
 	<div class="toast hidden" id="toast"></div>
+	<div class="sr-only" id="sr-live" aria-live="polite"></div>
 	<div class="fx" id="fx" aria-hidden="true"></div>
 
 	<script src="{{ url_for('static', filename='utils.js') }}?v={{ cache_v }}"></script>
