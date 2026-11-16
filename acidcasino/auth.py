@@ -8,10 +8,10 @@ import secrets
 import threading
 import time
 
-from flask import request
+from flask import has_request_context, request
 
 import arcade
-from storage import DB_LOCK, SCORE_START, START_BALANCE, db_connect, rename_user
+from storage import DB_LOCK, SCORE_START, START_BALANCE, db_connect, rename_user, signup_allowed
 
 
 CAPTCHA_TTL    = 300
@@ -83,8 +83,8 @@ def delete_session(token: str):
 		c.execute('DELETE FROM sessions WHERE token=?', (token,))
 
 
-def mirror_user(user_id: int, username: str, ip: str = None):
-	'''Keep the local users row of an acid-arcade-db account in step, giving a new one the starting chips and credit score.'''
+def mirror_user(user_id: int, username: str):
+	'''Keep the local users row of an acid-arcade-db account in step, giving a new one the credit score, and the starting chips unless its IP address already got them today.'''
 
 	with db_connect() as c:
 		row = c.execute('SELECT username FROM users WHERE id=?', (user_id,)).fetchone()
@@ -93,9 +93,12 @@ def mirror_user(user_id: int, username: str, ip: str = None):
 	with DB_LOCK, db_connect() as c:
 		rename_user(c, user_id, username)
 		if not c.execute('SELECT 1 FROM users WHERE id=?', (user_id,)).fetchone():
-			now = int(time.time())
-			c.execute('INSERT INTO users(id, username, password_hash, created_at, balance, score, signup_ip) VALUES(?, ?, ?, ?, ?, ?, ?)', (user_id, username, '', now, START_BALANCE, SCORE_START, ip))
-			c.execute('INSERT INTO ledger(user_id, amount, balance, game, note, at) VALUES(?, ?, ?, ?, ?, ?)', (user_id, START_BALANCE, START_BALANCE, 'bank', 'welcome chips', now))
+			now   = int(time.time())
+			ip    = request.remote_addr if has_request_context() else None
+			chips = START_BALANCE if ip and signup_allowed(c, ip) else 0 # arcade accounts can be made anywhere, so welcome chips are one per IP address a day like signups here
+			c.execute('INSERT INTO users(id, username, password_hash, created_at, balance, score, signup_ip) VALUES(?, ?, ?, ?, ?, ?, ?)', (user_id, username, '', now, chips, SCORE_START, ip))
+			if chips:
+				c.execute('INSERT INTO ledger(user_id, amount, balance, game, note, at) VALUES(?, ?, ?, ?, ?, ?)', (user_id, chips, chips, 'bank', 'welcome chips', now))
 
 
 def request_token() -> str:

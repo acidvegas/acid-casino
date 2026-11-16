@@ -25,6 +25,7 @@ hub.start = lambda every: None # no table clock thread, so tests can drive every
 
 import app
 import arcade
+import auth
 import blackjack
 import chat
 import slots
@@ -73,6 +74,9 @@ class TestArcade(unittest.TestCase):
 		self.enabled = mock.patch.object(arcade, 'enabled', return_value=True)
 		self.enabled.start()
 		self.addCleanup(self.enabled.stop)
+		self.ips = mock.patch.object(auth, 'signup_allowed', return_value=True) # every test client shares one IP; test_welcome_once_per_ip checks the real rule
+		self.ips.start()
+		self.addCleanup(self.ips.stop)
 
 	def session_as(self, user_id: int, username: str):
 		'''Make every token resolve to this account.'''
@@ -220,6 +224,17 @@ class TestArcade(unittest.TestCase):
 			self.assertEqual(c.execute('SELECT balance FROM users WHERE id=9004').fetchone()['balance'], storage.START_BALANCE)
 		with storage.DB_LOCK, storage.db_connect() as c:
 			storage.delete_user(c, 9004)
+
+	def test_welcome_once_per_ip(self):
+		'''Only the first arcade account from an IP address in a day gets the welcome chips here.'''
+
+		self.ips.stop()
+		self.addCleanup(self.ips.start)
+		for user_id, ip, chips in ((9101, '10.7.0.1', storage.START_BALANCE), (9102, '10.7.0.1', 0), (9103, '10.7.0.2', storage.START_BALANCE)):
+			with mock.patch.object(arcade, 'session', return_value={'user_id': user_id, 'username': f'alt{user_id}', 'admin': False}):
+				self.client.get('/wallet', headers={'X-Auth-Token': 't'}, environ_base={'REMOTE_ADDR': ip})
+			with storage.db_connect() as c:
+				self.assertEqual(c.execute('SELECT balance FROM users WHERE id=?', (user_id,)).fetchone()['balance'], chips)
 
 	def test_sso(self):
 		with mock.patch.object(arcade, 'sso', return_value={'token': 'new', 'user_id': 9009, 'username': 'roamer'}) as sso:

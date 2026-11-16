@@ -8,7 +8,7 @@ import cards
 import chat
 import hub
 from cards import RNG
-from storage import DB_LOCK, NotEnough, credit, db_connect, house_move, money, move, wager
+from storage import DB_LOCK, LOAN_AGE, LOAN_WAGERED, NotEnough, credit, db_connect, house_move, money, move, wager
 
 
 SEATS       = 6
@@ -280,6 +280,11 @@ def join(table: Table, user_id: int, name: str, buyin: int, seat: int = None) ->
 			return 'pay off your debt before playing against other people (bot and solo tables are fine)'
 		if others and c.execute(f'SELECT 1 FROM users WHERE owed > 0 AND id IN ({",".join("?" * len(others))})', others).fetchone():
 			return 'someone at this table is in debt, so it is closed to other players until they pay it off'
+		fresh = {r[0] for r in c.execute(f'SELECT id FROM users WHERE (created_at > ? OR wagered < ?) AND id IN ({",".join("?" * (len(others) + 1))})', (int(time.time()) - LOAN_AGE, LOAN_WAGERED, *others, user_id))} if others else set() # new accounts can not hand their welcome chips to another account across a table
+		if user_id in fresh:
+			return f'new accounts can play other people once they are a day old and have bet {money(LOAN_WAGERED)} (bot and solo tables are fine)'
+		if fresh:
+			return 'a new account is at this table, so it is closed to other players for now'
 	busy = table.hand['players'] if table.hand and table.hand['street'] != 'done' else {} # a seat someone left mid-hand stays empty until the hand ends
 	free = [i for i, st in enumerate(table.seats) if st is None and i not in busy]
 	if not free:

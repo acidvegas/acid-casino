@@ -340,10 +340,27 @@ class TestPoker(unittest.TestCase):
 		h = {'players': {0: {'total': 500, 'folded': False}, 1: {'total': 200, 'folded': False}}}
 		self.assertEqual(poker.pots(h), [(400, [0, 1]), (300, [0])])
 
+	def test_new_accounts_kept_apart(self):
+		'''A new account can play bots but never sit with another person, in either order.'''
+
+		hub.TABLES.clear()
+		hub.TABLES['n'] = t = poker.Table('n', 'New', 'micro')
+		old, new = make_user('pkold'), make_user('pknew')
+		with storage.DB_LOCK, storage.db_connect() as c:
+			c.execute('UPDATE users SET wagered=? WHERE id=?', (storage.LOAN_WAGERED, old))
+		self.assertIsNone(poker.join(t, new, 'pknew', 4_000))
+		self.assertEqual(poker.join(t, old, 'pkold', 4_000), 'a new account is at this table, so it is closed to other players for now')
+		hub.TABLES['o'] = t2 = poker.Table('o', 'Old', 'micro')
+		self.assertIsNone(poker.join(t2, old, 'pkold', 4_000))
+		hub.TABLES.pop('n')
+		self.assertTrue(poker.join(t2, new, 'pknew', 4_000).startswith('new accounts can play other people'))
+
 	def test_chips_are_conserved(self):
 		hub.TABLES.clear()
 		hub.TABLES['t'] = t = poker.Table('t', 'Test', 'micro')
 		users = [make_user(f'pk{i}') for i in range(2)]
+		with storage.DB_LOCK, storage.db_connect() as c:
+			c.execute('UPDATE users SET wagered=? WHERE username IN (\'pk0\', \'pk1\')', (storage.LOAN_WAGERED,))
 		for u in users:
 			self.assertIsNone(poker.join(t, u, f'pk{u}', 4_000))
 		self.assertEqual(poker.join(t, users[0], 'again', 10_000), 'you are already sitting at a poker table')

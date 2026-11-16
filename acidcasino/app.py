@@ -342,7 +342,7 @@ def auth_signup():
 		if not allowed:
 			return api_error('only one new account per connection a day')
 		user = arcade.signup(username, password, data.get('captcha_id') or '', data.get('captcha') or '', request.remote_addr)
-		mirror_user(user['user_id'], user['username'], request.remote_addr)
+		mirror_user(user['user_id'], user['username'])
 		resp = jsonify({'token': user['token'], 'username': user['username']})
 		arcade.set_cookie(resp, request.host, user['token'])
 		return resp
