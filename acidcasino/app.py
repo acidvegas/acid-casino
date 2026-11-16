@@ -29,6 +29,9 @@ CACHE_VERSION = int(time.time())
 PROXIES       = int(os.environ.get('CASINO_PROXIES', '0')) # reverse proxies in front of the app, so the real client IP is used
 PUBLIC_URL    = os.environ.get('CASINO_PUBLIC_URL', '').rstrip('/') # main public address for canonical and share links, e.g. https://casino.acid.vegas
 OWN_MAX       = 3    # tables one player can have open at once
+IP_TABLES     = 5    # player made tables one IP address can have open at once, so alternate accounts can not flood the lobby
+IP_STREAMS    = 20   # event streams one IP address can have open at once
+STREAMS       = {}   # IP address -> open event streams
 PING_EVERY    = 15   # seconds between keep-alive comments on an idle event stream
 STATS_EVERY   = 30   # seconds between pushes of a player's summary to acid-arcade-db
 CHANGES_EVERY = 60   # seconds between polls of acid-arcade-db for renamed and deleted accounts
@@ -430,8 +433,12 @@ def events():
 
 	user_id = session_user(request.args.get('t') or '')[0]
 	tid     = request.args.get('table') or ''
+	ip      = request.remote_addr
 	q       = queue.Queue(maxsize=8)
 	with hub.LOCK:
+		if STREAMS.get(ip, 0) >= IP_STREAMS:
+			return api_error(f'you already have {IP_STREAMS} connections open, close some tabs first', 429)
+		STREAMS[ip] = STREAMS.get(ip, 0) + 1
 		hub.SUBS[q] = user_id
 		if user_id:
 			hub.SEEN[user_id] = time.time()
@@ -485,7 +492,15 @@ def events():
 					hub.SEEN[user_id] = time.time()
 			hub.notify()
 
-	return Response(stream(), mimetype='text/event-stream', headers={'Cache-Control': 'no-cache, no-transform, no-store', 'X-Accel-Buffering': 'no'})
+	def release():
+		with hub.LOCK:
+			STREAMS[ip] -= 1
+			if not STREAMS[ip]:
+				del STREAMS[ip]
+
+	response = Response(stream(), mimetype='text/event-stream', headers={'Cache-Control': 'no-cache, no-transform, no-store', 'X-Accel-Buffering': 'no'})
+	response.call_on_close(release) # runs once however the stream ends, even if it never started or errored out
+	return response
 
 
 @app.route('/favicon.ico')
@@ -701,6 +716,8 @@ def tables_create(user_id: int, username: str):
 	with hub.LOCK:
 		if sum(1 for t in hub.TABLES.values() if t.owner == user_id) >= OWN_MAX:
 			return api_error(f'you can have {OWN_MAX} tables open at once')
+		if sum(1 for t in hub.TABLES.values() if getattr(t, 'creator_ip', None) == request.remote_addr) >= IP_TABLES:
+			return api_error(f'you already have {IP_TABLES} open tables, finish or leave one first', 429)
 		tid = hub.new_code()
 		if game == 'blackjack' and stakes in {s[0] for s in blackjack.STAKES}:
 			solo  = bool(data.get('solo'))
@@ -710,7 +727,8 @@ def tables_create(user_id: int, username: str):
 		else:
 			return api_error('pick a game and stakes')
 		table.empty_since = time.time()
-		hub.TABLES[tid] = table
+		table.creator_ip  = request.remote_addr
+		hub.TABLES[tid]   = table
 	hub.notify()
 	return jsonify({'id': tid})
 

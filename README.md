@@ -25,6 +25,7 @@ Blackjack, no-limit Texas Hold'em and slots in the browser with play chips, buil
 - Lobby with every open table, the house bankroll against the richest player, a live feed of every win and loss *(its own tab beside the chat)*, a leaderboard of the richest players *(chips plus poker stacks minus debt)*, the hall of fame, a lobby chat for everyone and a chat at each table
 - Table chat pops up as a bubble by the speaker's seat, placed wherever it covers the least of the cards, chips and names. Seated players can send emoji reactions that float up from their seat, and tip the dealer $1, $5, $25 or $100 *(tips go to the house)*
 - House tables at every stake that are always open, plus tables anyone can start: public, private with an invite link, or solo against the dealer. Player tables close two minutes after the last person leaves
+- Flood limits: an account can have 3 tables of its own open at once and an IP address 5 *(so alternate accounts can not flood the lobby)*, and an IP address can hold 20 live update streams at once
 - Live updates over Server-Sent Events, so everyone at a table sees every card as it lands
 - Built to fit the screen without scrolling, from phones held upright to wide desktops, with dealing, flipping, chip and reel animations
 

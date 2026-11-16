@@ -225,6 +225,25 @@ class TestArcade(unittest.TestCase):
 		with storage.DB_LOCK, storage.db_connect() as c:
 			storage.delete_user(c, 9004)
 
+	def test_stream_limit_per_ip(self):
+		'''An IP address gets 20 event streams at once, and a closed stream frees its slot.'''
+
+		self.session_as(9201, 'streamer')
+		ip      = {'REMOTE_ADDR': '10.8.0.1'}
+		streams = [self.client.get('/events?t=t', environ_base=ip, buffered=False) for _ in range(app.IP_STREAMS)]
+		self.addCleanup(lambda: [s.close() for s in streams])
+		self.assertTrue(all(s.status_code == 200 for s in streams))
+		res = self.client.get('/events?t=t', environ_base=ip, buffered=False)
+		self.assertEqual(res.status_code, 429)
+		self.assertIn('error', res.get_json())
+		other = self.client.get('/events?t=t', environ_base={'REMOTE_ADDR': '10.8.0.2'}, buffered=False)
+		self.assertEqual(other.status_code, 200)
+		other.close()
+		streams.pop().close()
+		again = self.client.get('/events?t=t', environ_base=ip, buffered=False)
+		self.assertEqual(again.status_code, 200)
+		streams.append(again)
+
 	def test_welcome_once_per_ip(self):
 		'''Only the first arcade account from an IP address in a day gets the welcome chips here.'''
 
@@ -282,6 +301,30 @@ class TestArcade(unittest.TestCase):
 			app.stats_push(row) # a failed push is printed, never raised
 		with storage.DB_LOCK, storage.db_connect() as c:
 			storage.delete_user(c, 9005)
+
+	def test_table_limit_per_ip(self):
+		'''An IP address can have 5 player made tables open across accounts, other IP addresses are not held back.'''
+
+		ip   = {'REMOTE_ADDR': '10.9.0.1'}
+		made = []
+		self.addCleanup(lambda: [hub.TABLES.pop(t, None) for t in made])
+		for n in range(app.IP_TABLES):
+			with mock.patch.object(arcade, 'session', return_value={'user_id': 9301 + n // app.OWN_MAX, 'username': f'alt{9301 + n // app.OWN_MAX}', 'admin': False}):
+				res = self.client.post('/tables/create', headers={'X-Auth-Token': 't'}, json={'game': 'blackjack', 'stakes': blackjack.STAKES[0][0], 'solo': n % 2 == 0}, environ_base=ip)
+			self.assertEqual(res.status_code, 200)
+			made.append(res.get_json()['id'])
+		with mock.patch.object(arcade, 'session', return_value={'user_id': 9303, 'username': 'alt9303', 'admin': False}):
+			res = self.client.post('/tables/create', headers={'X-Auth-Token': 't'}, json={'game': 'poker', 'stakes': 'micro'}, environ_base=ip)
+			self.assertEqual(res.status_code, 429)
+			self.assertIn('5 open tables', res.get_json()['error'])
+			res = self.client.post('/tables/create', headers={'X-Auth-Token': 't'}, json={'game': 'blackjack', 'stakes': blackjack.STAKES[0][0]}, environ_base={'REMOTE_ADDR': '10.9.0.2'})
+		self.assertEqual(res.status_code, 200)
+		made.append(res.get_json()['id'])
+		del hub.TABLES[made.pop(0)]
+		with mock.patch.object(arcade, 'session', return_value={'user_id': 9303, 'username': 'alt9303', 'admin': False}):
+			res = self.client.post('/tables/create', headers={'X-Auth-Token': 't'}, json={'game': 'blackjack', 'stakes': blackjack.STAKES[0][0]}, environ_base=ip)
+		self.assertEqual(res.status_code, 200)
+		made.append(res.get_json()['id'])
 
 
 
