@@ -12,7 +12,7 @@ from storage import DB_LOCK, NotEnough, credit, db_connect, house_move, money, m
 
 SEATS       = 5
 DECKS       = 6
-PENETRATION = 0.75   # reshuffle once this much of the shoe is dealt
+PENETRATION = 0.5    # reshuffle once this much of the shoe is dealt, early enough that counting cards does not pay
 MAX_HANDS   = 4      # splitting up to four hands per seat
 EXPOSURE    = 2 * MAX_HANDS # the most one bet can win: split to four hands, all doubled, all winning
 BET_TIME    = 12     # seconds to bet once the first bet is down
@@ -21,7 +21,7 @@ ACT_TIME    = 20     # seconds to play a hand
 DEALER_STEP = 0.8    # seconds between dealer cards
 SHOW_TIME   = 4.5    # seconds the results stay up
 STAKES      = [('low', 'Low', 100, 50_000), ('mid', 'Mid', 1_000, 250_000), ('high', 'High', 10_000, 1_000_000), ('vip', 'VIP', 50_000, 5_000_000)]
-RULES       = ['6 decks shuffled together, a card burned after every shuffle, and a fresh shuffle once the cut card comes out at 75%', 'Blackjack pays 3 to 2', 'Dealer stands on all 17s', 'Dealer peeks for blackjack with an ace or ten showing', 'Insurance pays 2 to 1 when the dealer shows an ace', 'Double on any first two cards, also after splitting', 'Split pairs (any two tens) up to 4 hands; split aces get one card each and can not be split again', 'Late surrender on your first two cards gives back half your bet', 'A split hand that makes 21 is not a blackjack']
+RULES       = ['6 decks shuffled together, a card burned after every shuffle, and a fresh shuffle once the cut card comes out at 50%', 'Blackjack pays 3 to 2', 'Dealer stands on all 17s', 'Dealer peeks for blackjack with an ace or ten showing', 'Insurance pays 2 to 1 when the dealer shows an ace', 'Double on any first two cards, also after splitting', 'Split pairs (any two tens) up to 4 hands; split aces get one card each and can not be split again', 'Late surrender on your first two cards gives back half your bet', 'A split hand that makes 21 is not a blackjack']
 
 
 class Table:

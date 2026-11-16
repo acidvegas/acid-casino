@@ -32,7 +32,7 @@ Blackjack, no-limit Texas Hold'em and slots in the browser with play chips, buil
 
 - Up to 5 players at a table, each playing their own hands against one dealer in seat order
 - Once the first bet is down everyone has 12 seconds to bet, or the round deals as soon as everyone seated is ready. Each hand gets 20 seconds before it stands on its own
-- 6-deck shoe per table shuffled with a cryptographic RNG, a burn card after every shuffle, and a reshuffle at the 75% cut card. Hold'em gets a fresh shuffled deck every hand and burns a card before the flop, turn and river
+- 6-deck shoe per table shuffled with a cryptographic RNG, a burn card after every shuffle, and a reshuffle at the 50% cut card *(early enough that counting cards does not pay)*. Hold'em gets a fresh shuffled deck every hand and burns a card before the flop, turn and river
 - Blackjack pays 3 to 2, dealer stands on all 17s and peeks for blackjack with an ace or ten showing
 - Insurance pays 2 to 1, late surrender gives back half the bet
 - Double on any first two cards, also after a split
