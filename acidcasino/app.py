@@ -24,6 +24,7 @@ from storage import CREDIT_TIERS, DB_LOCK, DEBT_CAP, HOUSE_START, LATE_AFTER, LA
 
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 64 * 1024 # no request needs more than a few KB
 
 CACHE_VERSION = int(time.time())
 DUMMY_HASH    = generate_password_hash(os.urandom(16).hex()) # checked against for unknown usernames, so login takes as long either way
