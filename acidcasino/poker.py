@@ -265,10 +265,13 @@ def finish(table: Table):
 				wager(c, st['user_id'], p['total'])
 		house_move(c, bots)
 		c.execute('DELETE FROM poker_pots WHERE table_id=?', (table.id,)) # the pot is paid out, chips left in it by players who stood up included
+	ref = f'{table.id}:{table.hand_no}:{int(time.time() * 1000)}'
 	for s, p in h['players'].items():
 		st = table.seats[s]
 		if st and st['user_id'] and st['stack'] != p['start']:
 			chat.announce(st['name'], st['stack'] - p['start'], 'poker', st['user_id'])
+		if st and st['user_id']:
+			chat.activity(st['user_id'], 'poker_hand', f'{ref}:{st["user_id"]}', {'won': st['stack'] > p['start'], 'showdown': s in h['shown']})
 	h['street']   = 'done'
 	h['to_act']   = None
 	table.next_at = time.time() + BETWEEN

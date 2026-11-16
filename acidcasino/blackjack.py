@@ -336,9 +336,12 @@ def settle(t: Table):
 			wager(c, s['user_id'], s['stake'])
 			save_stake(c, t, s['user_id'], 0)
 			s['net'] = payout - s['stake']
-			nets.append((s['name'], s['net'], s['user_id']))
-	for name, net, user_id in nets:
+			result   = 'loss' if s['net'] < 0 else 'push' if not s['net'] else 'blackjack' if any(h['result'] == 'blackjack' for h in s['hands']) else 'win'
+			nets.append((s['name'], s['net'], s['user_id'], result))
+	ref = f'{t.id}:{int(time.time() * 1000)}'
+	for name, net, user_id, result in nets:
 		chat.announce(name, net, 'blackjack', user_id)
+		chat.activity(user_id, 'bj_hand', f'{ref}:{user_id}', {'result': result})
 	t.phase    = 'done'
 	t.active   = None
 	t.deadline = None

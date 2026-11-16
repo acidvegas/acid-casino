@@ -27,6 +27,24 @@ REACT_TIME = {}   # user id -> recent reaction and tip times
 BIG_WIN    = 10_000_000 # cents, a single result paying this much net goes to the acid-arcade-db activity feed
 
 
+def activity(user_id: int, kind: str, ref: str, data: dict):
+	'''Report a finished hand or spin to acid-arcade-db for daily missions in the background, printing any error so play never notices. Bots, standalone mode and players with no known address send nothing.
+
+	:param ref: unique id of the hand or spin for this player
+	'''
+
+	ip = hub.IPS.get(user_id)
+
+	def send():
+		try:
+			arcade.activity(user_id, kind, ref[:64], ip, data)
+		except Exception as e:
+			print(f'arcade activity for {user_id} failed: {e!r}')
+
+	if arcade.enabled() and user_id and ip:
+		threading.Thread(target=send, daemon=True).start()
+
+
 def add(room: str, user_id: int, name: str, text: str):
 	'''Store a message in a room, keeping lobby messages in the database.'''
 

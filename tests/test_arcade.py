@@ -28,6 +28,7 @@ import arcade
 import auth
 import blackjack
 import chat
+import poker
 import roulette
 import slots
 import storage
@@ -61,6 +62,20 @@ def one_pass(news: dict):
 			app.arcade_sync()
 		except StopLoop:
 			pass
+
+
+def rewards_pass(pending: list, ack_error: Exception = None) -> mock.Mock:
+	'''Run one pass of the arcade rewards loop against a canned pending reply. Returns the rewards_ack mock.'''
+
+	def stop(_):
+		raise StopLoop()
+
+	with mock.patch.object(arcade, 'rewards_pending', return_value=pending), mock.patch.object(arcade, 'rewards_ack', side_effect=ack_error) as ack, mock.patch.object(app, 'time', types.SimpleNamespace(time=time.time, sleep=stop)):
+		try:
+			app.rewards_loop()
+		except StopLoop:
+			pass
+	return ack
 
 
 def cookies(res) -> list:
@@ -409,6 +424,171 @@ class TestArcade(unittest.TestCase):
 		with storage.db_connect() as c:
 			self.assertEqual(storage.balance(c, 9601), 100_000)
 
+
+
+class TestRewards(unittest.TestCase):
+	def setUp(self):
+		self.enabled = mock.patch.object(arcade, 'enabled', return_value=True)
+		self.enabled.start()
+		self.addCleanup(self.enabled.stop)
+		self.sent = mock.patch.object(arcade, 'activity')
+		self.activity = self.sent.start()
+		self.addCleanup(self.sent.stop)
+		self.sync = mock.patch.object(chat, 'threading', SYNC)
+		self.sync.start()
+		self.addCleanup(self.sync.stop)
+
+	def balance(self, user_id: int) -> int:
+		'''Return a test account's balance.'''
+
+		with storage.db_connect() as c:
+			return storage.balance(c, user_id)
+
+	def house(self) -> int:
+		'''Return the house bankroll.'''
+
+		with storage.db_connect() as c:
+			return storage.house_balance(c)
+
+	def make_user(self, user_id: int, ip: str = '203.0.113.50') -> int:
+		'''Create a test account with $1,000 that last played from ip, removed after the test.'''
+
+		with storage.DB_LOCK, storage.db_connect() as c:
+			c.execute('INSERT INTO users(id, username, password_hash, created_at, balance, wagered) VALUES(?, ?, ?, 0, 100000, ?)', (user_id, f'rw{user_id}', 'x', storage.LOAN_WAGERED))
+		hub.IPS[user_id] = ip
+
+		def cleanup():
+			hub.IPS.pop(user_id, None)
+			with storage.DB_LOCK, storage.db_connect() as c:
+				storage.delete_user(c, user_id)
+				c.execute('DELETE FROM poker_seats WHERE user_id=?', (user_id,))
+
+		self.addCleanup(cleanup)
+		return user_id
+
+	def sent_kinds(self) -> list:
+		'''Return (user id, kind, data) for every activity sent, checking each carries the address and a unique short ref.'''
+
+		refs = [c.args[2] for c in self.activity.call_args_list]
+		self.assertEqual(len(refs), len(set(refs)))
+		self.assertTrue(all(len(r) <= 64 for r in refs))
+		self.assertTrue(all(c.args[3] == hub.IPS.get(c.args[0]) for c in self.activity.call_args_list))
+		return [(c.args[0], c.args[1], c.args[4]) for c in self.activity.call_args_list]
+
+	def test_activity_needs_arcade_and_address(self):
+		u = self.make_user(9701)
+		chat.activity(u, 'roulette_spin', 'x:1', {'won': True})
+		chat.activity(None, 'poker_hand', 'x:2', {'won': True, 'showdown': False}) # a bot
+		hub.IPS.pop(u)
+		chat.activity(u, 'roulette_spin', 'x:3', {'won': True}) # no known address
+		hub.IPS[u] = '203.0.113.50'
+		with mock.patch.object(arcade, 'enabled', return_value=False):
+			chat.activity(u, 'roulette_spin', 'x:4', {'won': True}) # standalone
+		self.activity.assert_called_once_with(u, 'roulette_spin', 'x:1', '203.0.113.50', {'won': True})
+		self.activity.side_effect = arcade.ArcadeDown('refused') # printed, play carries on
+		chat.activity(u, 'roulette_spin', 'x:5', {'won': False})
+
+	def test_address_from_requests(self):
+		with mock.patch.object(arcade, 'session', return_value={'user_id': 9702, 'username': 'rwip', 'admin': False}):
+			app.app.test_client().get('/wallet', headers={'X-Auth-Token': 't', 'X-Forwarded-For': '203.0.113.77'})
+		self.assertEqual(hub.IPS.pop(9702), '203.0.113.77')
+		with storage.DB_LOCK, storage.db_connect() as c:
+			storage.delete_user(c, 9702)
+
+	def test_blackjack_hands(self):
+		u = self.make_user(9703)
+		t = blackjack.Table('trwbj', 'Test', 'low', solo=True)
+		blackjack.sit(t, u, 'rw9703')
+		for player, dealer, extra, actions in ((['Ah', 'Kh'], ['Ts', '7s'], [], []), (['Th', '6h'], ['Ts', '7s'], ['9c'], ['hit']), (['Th', '9h'], ['Ts', '7s'], [], ['stand']), (['Th', '7h'], ['Ts', '7s'], [], ['stand'])):
+			t.shoe = ['2c'] * 300 + list(reversed([player[0], dealer[0], player[1], dealer[1], *extra]))
+			self.assertIsNone(blackjack.bet(t, 0, 1_000, True))
+			for a in actions:
+				self.assertIsNone(blackjack.act(t, 0, a))
+			while t.phase == 'dealer':
+				t.next_at = 0
+				blackjack.tick(t)
+			self.assertEqual(t.phase, 'done')
+			t.next_at = 0
+			blackjack.tick(t)
+		self.assertEqual(self.sent_kinds(), [(u, 'bj_hand', {'result': r}) for r in ('blackjack', 'loss', 'win', 'push')])
+
+	def test_client_calls(self):
+		self.sent.stop()
+		with mock.patch.object(arcade, 'ARCADE_GAME', 'casino'), mock.patch.object(arcade, 'call', side_effect=[{'granted': 0, 'reason': None, 'dup': False}, {'rewards': []}, {'acked': 2}]) as call:
+			self.assertEqual(arcade.activity(5, 'bj_hand', 'r1', '203.0.113.1', {'result': 'win'}), {'granted': 0, 'reason': None, 'dup': False})
+			self.assertEqual(arcade.rewards_pending(), [])
+			self.assertEqual(arcade.rewards_ack([1, 2]), 2)
+		self.sent.start()
+		self.assertEqual([c.args for c in call.call_args_list], [
+			('/internal/activity', {'game': 'casino', 'user_id': 5, 'kind': 'bj_hand', 'ref': 'r1', 'ip': '203.0.113.1', 'data': {'result': 'win'}}),
+			('/internal/rewards/pending', {'game': 'casino'}),
+			('/internal/rewards/ack', {'game': 'casino', 'ids': [1, 2]}),
+		])
+
+	def test_poker_humans_only(self):
+		u = self.make_user(9704)
+		hub.TABLES['trwpk'] = t = poker.Table('trwpk', 'Test', 'micro')
+		self.addCleanup(hub.TABLES.pop, 'trwpk', None)
+		self.assertIsNone(poker.join(t, u, 'rw9704', 4_000))
+		poker.seat_bots(t)
+		self.assertTrue(poker.start_hand(t))
+		while t.hand['street'] != 'done':
+			self.assertIsNone(poker.act(t, t.hand['to_act'], 'fold'))
+		seat = next(i for i, st in enumerate(t.seats) if st and st['user_id'] == u)
+		won  = t.seats[seat]['stack'] > 4_000
+		self.assertEqual(self.sent_kinds(), [(u, 'poker_hand', {'won': won, 'showdown': False})])
+		poker.leave(t, seat)
+
+	def test_roulette_spins_not_slots(self):
+		u = self.make_user(9705)
+		t = roulette.Table('trwrl', 'Test', 'low', 'european', solo=True)
+		roulette.sit(t, u, 'rw9705')
+		for pocket in (17, 0):
+			with mock.patch.object(roulette.RNG, 'choice', return_value=pocket):
+				self.assertIsNone(roulette.place(t, 0, [{'spot': 'straight:17', 'amount': 100}], True))
+			t.next_at = 0
+			roulette.tick(t)
+			t.next_at = 0
+			roulette.tick(t)
+		with mock.patch.object(hub, 'cover', return_value=10 ** 15):
+			slots.spin(u, 'rw9705', 100)
+		self.assertEqual(self.sent_kinds(), [(u, 'roulette_spin', {'won': True}), (u, 'roulette_spin', {'won': False})])
+
+	def test_rewards_paid_once_from_the_house(self):
+		u    = self.make_user(9706)
+		bank = self.house()
+		good = [{'id': 880001, 'user_id': u, 'amount': 30_000, 'note': 'Wordle solved in 3'}, {'id': 880002, 'user_id': u, 'amount': storage.REWARD_MAX, 'note': 'gold achievement'}]
+		bad  = [{'id': 880003, 'user_id': u, 'amount': 0, 'note': 'x'}, {'id': 880004, 'user_id': u, 'amount': storage.REWARD_MAX + 1, 'note': 'x'}, {'id': 880005, 'user_id': u, 'amount': True, 'note': 'x'}, {'id': 880006, 'user_id': u, 'amount': 500.0, 'note': 'x'}, {'id': '880007', 'user_id': u, 'amount': 500, 'note': 'x'}, {'id': 880008, 'user_id': u, 'amount': -500, 'note': 'x'}]
+		later = {'id': 880009, 'user_id': 9799, 'amount': 500, 'note': 'not in the casino yet'}
+		ack  = rewards_pass(good + bad + [later])
+		ack.assert_called_once_with([880001, 880002])
+		total = 30_000 + storage.REWARD_MAX
+		self.assertEqual((self.balance(u), self.house()), (100_000 + total, bank - total))
+		with storage.db_connect() as c:
+			rows = [tuple(r) for r in c.execute("SELECT amount, note FROM ledger WHERE user_id=? AND game='arcade' ORDER BY id", (u,))]
+		self.assertEqual(rows, [(30_000, 'Wordle solved in 3'), (storage.REWARD_MAX, 'gold achievement')])
+		self.assertEqual([r['note'] for r in storage.wallet(u)['arcade']], ['gold achievement', 'Wordle solved in 3'])
+		ack = rewards_pass(good + [later], ack_error=arcade.ArcadeDown('refused')) # seen again, as if the last ack was lost: acked, never paid twice
+		ack.assert_called_once_with([880001, 880002])
+		ack = rewards_pass(good)
+		ack.assert_called_once_with([880001, 880002])
+		self.assertEqual((self.balance(u), self.house()), (100_000 + total, bank - total))
+		self.make_user(9799) # the player opens the casino, so the waiting reward is paid on the next pass
+		ack = rewards_pass([later])
+		ack.assert_called_once_with([880009])
+		self.assertEqual(self.balance(9799), 100_500)
+		self.assertFalse(rewards_pass(bad).called) # nothing payable, nothing to ack
+		with mock.patch.object(arcade, 'rewards_pending', side_effect=arcade.ArcadeDown('refused')), mock.patch.object(app, 'time', types.SimpleNamespace(time=time.time, sleep=mock.Mock(side_effect=StopLoop()))):
+			with self.assertRaises(StopLoop): # printed, the loop carries on to its sleep
+				app.rewards_loop()
+		with storage.DB_LOCK, storage.db_connect() as c:
+			c.execute('DELETE FROM rewards_paid WHERE id BETWEEN 880001 AND 880009')
+
+	def test_wallet_page_links_the_arcade(self):
+		with open(os.path.join(os.path.dirname(app.__file__), 'static', 'utils.js')) as f:
+			js = f.read()
+		self.assertIn('Earn chips in the arcade', js)
+		self.assertIn('id="earn-link"', app.app.test_client().get('/').get_data(as_text=True))
 
 
 class TestStandalone(unittest.TestCase):

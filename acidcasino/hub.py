@@ -14,6 +14,7 @@ from storage import HOUSE_START, JACKPOT_SEED
 LOCK          = threading.RLock() # guards every table and the chat; always taken before the database lock
 SUBS          = {}               # event stream queue -> user id (None for guests)
 SEEN          = {}               # user id -> last time they had the site open
+IPS           = {}               # user id -> address of their last signed in request, sent with arcade activity
 TABLES        = {}               # table id -> poker, blackjack or roulette table
 HOUSE         = {}               # house bankroll and the richest player, refreshed every second
 OFFLINE_AFTER = 120              # seconds without the site open before a seat is given up

@@ -21,7 +21,7 @@ import poker
 import roulette
 import slots
 from auth import USERNAME_RE, attempt, blocked, captcha_create, captcha_verify, create_session, delete_session, mirror_user, request_token, request_user, session_user
-from storage import CREDIT_TIERS, DB_LOCK, DEBT_CAP, HOUSE_START, JACKPOT_SEED, LATE_AFTER, LATE_COST, LOAN_AGE, LOAN_FREEZE, LOAN_MIN, LOAN_WAGERED, MAXED_COST, PAID_FAST, PAID_OK, REFILL_AMOUNT, REFILL_UNDER, REFILL_WAIT, REPAY_SHARE, SCORE_RANGE, START_BALANCE, TIPS, accrue, borrow, db_connect, delete_user, fame, house_balance, init_db, jackpot, leaderboard, money, prune_sessions, refill_request, refund_bets, rename_user, repay, signup_allowed, summaries, tip, wallet, wallet_stamp
+from storage import CREDIT_TIERS, DB_LOCK, DEBT_CAP, HOUSE_START, JACKPOT_SEED, LATE_AFTER, LATE_COST, LOAN_AGE, LOAN_FREEZE, LOAN_MIN, LOAN_WAGERED, MAXED_COST, PAID_FAST, PAID_OK, REFILL_AMOUNT, REFILL_UNDER, REFILL_WAIT, REPAY_SHARE, SCORE_RANGE, START_BALANCE, TIPS, accrue, borrow, db_connect, delete_user, fame, house_balance, init_db, jackpot, leaderboard, money, prune_sessions, refill_request, refund_bets, rename_user, repay, rewards_pay, signup_allowed, summaries, tip, wallet, wallet_stamp
 
 
 app = Flask(__name__)
@@ -42,6 +42,7 @@ STATS_EVERY   = 30   # seconds between pushes of a player's summary to acid-arca
 CHANGES_EVERY = 60   # seconds between polls of acid-arcade-db for renamed and deleted accounts
 STATS_SENT    = {}   # user id -> (main, stats) last pushed to acid-arcade-db
 PRESENT_EVERY = 30   # seconds between reports of who has the casino open to acid-arcade-db
+REWARDS_EVERY = 15   # seconds between polls of acid-arcade-db for casino chips earned in the rest of the arcade
 GAMES         = {'blackjack': blackjack, 'poker': poker, 'roulette': roulette} # table game -> the module that runs it
 
 if PROXIES:
@@ -87,6 +88,7 @@ def arcade_sync():
 						delete_user(c, user_id)
 					gone.discard(user_id)
 					STATS_SENT.pop(user_id, None)
+					hub.IPS.pop(user_id, None)
 			hub.notify()
 		time.sleep(CHANGES_EVERY)
 
@@ -153,6 +155,7 @@ def login_required(fn):
 		user_id, username = request_user()
 		if not user_id:
 			return api_error('sign in to play', 401)
+		hub.IPS[user_id] = request.remote_addr
 		return fn(user_id, username, *args, **kwargs)
 	return wrapper
 
@@ -201,6 +204,20 @@ def reply(table, user_id: int, error: str = None) -> tuple:
 	return jsonify(table.view(user_id))
 
 
+def rewards_loop():
+	'''Background thread: pay out casino chips players earned in the rest of the arcade from the house, then tell acid-arcade-db which were paid.'''
+
+	while True:
+		try:
+			paid = rewards_pay(arcade.rewards_pending())
+			if paid:
+				arcade.rewards_ack(paid)
+				hub.notify()
+		except Exception as e:
+			print(f'arcade rewards error: {e!r}')
+		time.sleep(REWARDS_EVERY)
+
+
 def setup():
 	'''Open the database, give back chips from before a restart and open the house tables.'''
 
@@ -222,6 +239,7 @@ def setup():
 		threading.Thread(target=arcade_sync, daemon=True).start()
 		threading.Thread(target=stats_loop, daemon=True).start()
 		threading.Thread(target=presence_loop, daemon=True).start()
+		threading.Thread(target=rewards_loop, daemon=True).start()
 
 
 def stats_loop():

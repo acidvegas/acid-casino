@@ -37,6 +37,8 @@ JACKPOT_SEED  = 5_000_000           # cents, the slots jackpot starts (and resta
 JACKPOT_USER  = 0                   # ledger user id for moves in and out of the jackpot, which belongs to nobody yet
 FEED_KEEP     = 200                 # live feed results kept in the database
 LEADERBOARD_N = 25
+REWARD_MAX    = 1_000_000           # cents, an arcade reward over $10,000 is never paid
+ARCADE_SHOWN  = 5                   # recent arcade rewards shown in the wallet
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -210,6 +212,7 @@ def init_db():
 			at      INTEGER NOT NULL
 		)''')
 		c.execute('CREATE INDEX IF NOT EXISTS ledger_user ON ledger(user_id, id)')
+		c.execute('CREATE INDEX IF NOT EXISTS ledger_game ON ledger(user_id, game, id)')
 		c.execute('''CREATE TABLE IF NOT EXISTS loans (
 			id           INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_id      INTEGER NOT NULL,
@@ -258,6 +261,12 @@ def init_db():
 			worth    INTEGER NOT NULL,
 			house    INTEGER NOT NULL,
 			at       INTEGER NOT NULL
+		)''')
+		c.execute('''CREATE TABLE IF NOT EXISTS rewards_paid (
+			id      INTEGER PRIMARY KEY,
+			user_id INTEGER NOT NULL,
+			amount  INTEGER NOT NULL,
+			at      INTEGER NOT NULL
 		)''')
 		c.execute('INSERT OR IGNORE INTO house(id, balance) VALUES(1, ?)', (HOUSE_START,))
 		cols = {r['name'] for r in c.execute('PRAGMA table_info(users)')}
@@ -412,6 +421,31 @@ def repay(user_id: int, amount: int) -> str:
 		move(c, user_id, -amount, 'loan', f'paid back {money(amount)}')
 
 
+def rewards_pay(rewards: list) -> list:
+	'''Pay chips earned in the rest of the arcade from the house, each reward once. Returns the ids to acknowledge: paid now or already paid before. Rewards for players without a casino account yet wait.
+
+	:param rewards: the list from arcade.rewards_pending()
+	'''
+
+	done = []
+	with DB_LOCK, db_connect() as c:
+		for r in rewards:
+			rid, user_id, amount, note = r.get('id'), r.get('user_id'), r.get('amount'), r.get('note')
+			if type(rid) is not int or type(user_id) is not int or type(amount) is not int or not 0 < amount <= REWARD_MAX or not isinstance(note, str):
+				print(f'skipped a bad arcade reward: {r!r}')
+				continue
+			if c.execute('SELECT 1 FROM rewards_paid WHERE id=?', (rid,)).fetchone():
+				done.append(rid)
+				continue
+			if not c.execute('SELECT 1 FROM users WHERE id=?', (user_id,)).fetchone():
+				continue
+			c.execute('INSERT INTO rewards_paid(id, user_id, amount, at) VALUES(?, ?, ?, ?)', (rid, user_id, amount, int(time.time())))
+			move(c, user_id, amount, 'arcade', note[:200])
+			house_move(c, -amount)
+			done.append(rid)
+	return done
+
+
 def score(c: sqlite3.Connection, user_id: int, delta: int):
 	'''Move a credit score, keeping it in range.'''
 
@@ -459,6 +493,7 @@ def wallet(user_id: int) -> dict:
 		pending = c.execute('SELECT requested_at FROM loans WHERE user_id=? AND granted_at IS NULL', (user_id,)).fetchone()
 		busy    = in_play(c, user_id)
 		closed  = loans_closed(c, row)
+		arcade  = [dict(r) for r in c.execute("SELECT id, amount, note, at FROM ledger WHERE user_id=? AND game='arcade' ORDER BY id DESC LIMIT ?", (user_id, ARCADE_SHOWN))]
 	limit, rate = credit_terms(row['score'])
 	out = {k: row[k] for k in ('id', 'username', 'balance', 'owed', 'score')}
 	out['refill_ready_in'] = max(0, pending['requested_at'] + REFILL_WAIT - int(time.time())) if pending else None
@@ -468,6 +503,7 @@ def wallet(user_id: int) -> dict:
 	out['loan_room']       = 0 if closed else max(0, min(limit, DEBT_CAP) - row['owed'])
 	out['loans_closed']    = closed
 	out['debt_days']       = (int(time.time()) - row['debt_since']) / 86400 if row['owed'] else None
+	out['arcade']          = arcade
 	return out
 
 

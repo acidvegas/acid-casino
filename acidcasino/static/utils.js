@@ -274,6 +274,8 @@ async function loadMe() {
 	setBalance(me.balance);
 	$('top-user').classList.remove('hidden');
 	$('nav').classList.remove('hidden');
+	$('earn-link').classList.toggle('hidden', !arcadeUrl);
+	if (arcadeUrl) $('earn-link').href = `${arcadeUrl}/rewards`;
 	$('chat').classList.remove('hidden'); // on phones it stays tucked away until opened
 	go();
 }
@@ -340,6 +342,14 @@ async function submitAuth(e) {
 	}
 }
 
+function arcadeArrived(seen, recent) {
+	// Chips earned in the rest of the arcade landed since the last wallet update
+	if (seen === null) return;
+	const fresh = recent.filter((r) => r.id > seen);
+	if (fresh.length === 1) toast(`+${money(fresh[0].amount)} from the arcade: ${fresh[0].note}`);
+	else if (fresh.length) toast(`+${money(fresh.reduce((a, r) => a + r.amount, 0))} in arcade rewards arrived`);
+}
+
 function openAccount() {
 	openModal(`<h3>${who(me.username, me.id)}</h3>
 		<p class="note">Your chips, seats and loans are saved to your account.</p>
@@ -373,6 +383,10 @@ async function openWallet() {
 		: `<div class="quick">${[10000, 50000, 100000, 500000, 1000000, 2500000].filter((c) => c <= w.loan_room).map((c) => `<button class="btn small" data-borrow="${c}">${money(c)}</button>`).join('')}</div>
 		<div class="money-row"><span class="dollar">$</span><input id="loan-amt" inputmode="numeric" value="${Math.min(1000, Math.floor(w.loan_room / 100))}"><button class="btn primary" id="btn-borrow">Borrow</button></div>
 		<p class="note" id="loan-preview"></p>`;
+	const arcade = arcadeUrl ? `<h4>Arcade rewards</h4>
+		<p class="note">Beat the computer in the other arcade games, keep a daily login streak and finish daily missions to earn chips, paid by the house.</p>
+		${w.arcade.length ? `<table class="tiers">${w.arcade.map((r) => `<tr><td class="pos">+${money(r.amount)}</td><td>${esc(r.note)}</td></tr>`).join('')}</table>` : ''}
+		<div class="btns"><a class="btn wide" href="${esc(arcadeUrl)}/rewards" target="_blank" rel="noopener">Earn chips in the arcade</a></div>` : '';
 	openModal(`<h3>Your chips</h3>
 		<div class="big-num">${money(w.balance)}</div>
 		${debt}
@@ -384,7 +398,8 @@ async function openWallet() {
 		<h4>Borrow from the house</h4>
 		${borrow}
 		<h4>Free refill</h4>
-		${refill}`);
+		${refill}
+		${arcade}`);
 	const cents = (id) => Math.round(parseFloat($(id).value.replace(/[$,]/g, '')) * 100) || 0;
 	if ($('loan-amt')) {
 		const preview = () => {
@@ -441,7 +456,7 @@ function connect() {
 	const parse = (e) => { const d = JSON.parse(e.data); offset = d.now * 1000 - Date.now(); return d.data; };
 	source.addEventListener('lobby', (e) => { lobby = parse(e); $('online').textContent = `${lobby.online} online`; renderHouse(); if (route.view === 'lobby') renderLobby(); if (route.view === 'slots' && slotInfo && !spinning && !autoLeft) renderSlotBet(); });
 	source.addEventListener('feed', (e) => addFeed(JSON.parse(e.data)));
-	source.addEventListener('me', (e) => { const w = parse(e); if (!w) return; const wasDue = me && me.refill_ready_in !== null; me = Object.assign(me || {}, w); setBalance(w.balance); if (wasDue && w.refill_ready_in === null) toast(`Your free ${money(bank.refill)} arrived`); if (table) { prevTable = table; renderTable(); } }); // same table state, so nothing on it counts as new
+	source.addEventListener('me', (e) => { const w = parse(e); if (!w) return; const wasDue = me && me.refill_ready_in !== null; const seenArcade = me && me.arcade ? (me.arcade[0] || { id: 0 }).id : null; me = Object.assign(me || {}, w); setBalance(w.balance); if (wasDue && w.refill_ready_in === null) toast(`Your free ${money(bank.refill)} arrived`); arcadeArrived(seenArcade, w.arcade || []); if (table) { prevTable = table; renderTable(); } }); // same table state, so nothing on it counts as new
 	source.addEventListener('table', (e) => {
 		const t = parse(e);
 		if (!t) { if (route.view === 'table') { toast('That table is closed'); location.hash = '#/lobby'; } return; }

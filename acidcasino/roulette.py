@@ -229,8 +229,10 @@ def settle(t: Table):
 			s['net'] = paid - s['stake']
 			nets.append((s['name'], s['net'], s['user_id']))
 	t.history.appendleft(t.result)
+	ref = f'{t.id}:{int(time.time() * 1000)}'
 	for name, net, user_id in nets:
 		chat.announce(name, net, 'roulette', user_id)
+		chat.activity(user_id, 'roulette_spin', f'{ref}:{user_id}', {'won': net > 0})
 	t.phase   = 'done'
 	t.next_at = time.time() + SHOW_TIME
 
