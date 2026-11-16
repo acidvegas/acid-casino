@@ -85,6 +85,7 @@ By default the casino keeps its own accounts. Set `ARCADE_URL` and accounts live
 | `ARCADE_URL`        | Internal acid-arcade-db API, e.g. `http://acid-arcade-db:20021`. Unset means standalone |
 | `ARCADE_PUBLIC_URL` | Public arcade site used for pictures and account settings. `{domain}` is replaced with the player's parent domain, so `chess.supernets.org` links to `arcade.supernets.org` *(setup.sh defaults it to `https://arcade.{domain}`)* |
 | `ARCADE_GAME`       | This game's slug in acid-arcade-db *(`casino`, set by setup.sh)*                       |
+| `ARCADE_KEY`        | This game's key, needed when acid-arcade-db has `ARCADE_GAME_KEYS` set                 |
 
 With `ARCADE_URL` set, `setup.sh` also joins the container to the `arcade` docker network.
 

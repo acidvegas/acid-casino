@@ -10,7 +10,7 @@ if [ -n "$CASINO_PUBLIC_URL" ]; then
 fi
 if [ -n "$ARCADE_URL" ]; then
 	PUBLIC='https://arcade.{domain}' # {domain} is filled in with the player's parent domain
-	ARCADE="--network arcade -e ARCADE_URL -e ARCADE_PUBLIC_URL=${ARCADE_PUBLIC_URL:-$PUBLIC} -e ARCADE_GAME=casino"
+	ARCADE="--network arcade -e ARCADE_URL -e ARCADE_PUBLIC_URL=${ARCADE_PUBLIC_URL:-$PUBLIC} -e ARCADE_GAME=casino -e ARCADE_KEY"
 fi
 docker build -t acidcasino .
 docker rm -f acidcasino 2>/dev/null || true
