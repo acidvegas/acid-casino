@@ -2,6 +2,7 @@
 # acid-casino - Developed by acidvegas in Python (https://github.com/acidvegas)
 # acidcasino/poker.py
 
+import random
 import time
 
 import cards
@@ -18,6 +19,7 @@ BOT_TARGET  = 4      # bots fill a table with a human at it up to this many play
 BOT_STACK   = 100    # big blinds a bot sits down with
 BOT_NAMES   = ['Ace_Bot', 'Bluffy', 'ChipBot', 'DonkBot', 'FishBot', 'GrinderBot', 'NitBot', 'RiverRat', 'SharkBot', 'TiltBot']
 SIM_ROUNDS  = 200    # Monte Carlo deals a bot runs to judge its hand
+SIM_RNG     = random.Random() # the practice deals only need speed, real cards come from cards.RNG
 SIT_OUT_MAX = 600    # seconds before a sitting out player is stood up
 STAKES      = [
 	('micro', 'Micro', 25, 50),
@@ -211,7 +213,7 @@ def equity(hole: list, board: list, opps: int) -> float:
 	rest = [c for c in cards.deck() if c not in seen]
 	won  = 0.0
 	for _ in range(SIM_ROUNDS):
-		RNG.shuffle(rest)
+		SIM_RNG.shuffle(rest)
 		full = board + rest[:5 - len(board)]
 		at   = 5 - len(board)
 		mine = cards.evaluate(hole + full)
