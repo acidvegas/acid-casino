@@ -107,6 +107,9 @@ def post(room: str, user_id: int, name: str, text: str) -> str:
 	with hub.LOCK:
 		if room != 'lobby' and room not in hub.TABLES:
 			return 'that table is closed'
+		table = hub.TABLES.get(room)
+		if table and table.owner != user_id and not any(s and s.get('user_id') == user_id for s in table.seats):
+			return 'sit at the table to chat here'
 		add(room, user_id, name, text)
 	hub.notify()
 

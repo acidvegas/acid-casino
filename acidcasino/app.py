@@ -32,6 +32,8 @@ OWN_MAX       = 3    # tables one player can have open at once
 IP_TABLES     = 5    # player made tables one IP address can have open at once, so alternate accounts can not flood the lobby
 IP_STREAMS    = 20   # event streams one IP address can have open at once
 STREAMS       = {}   # IP address -> open event streams
+SPINS         = {}   # user id -> times of their spins in the last second
+SPIN_MAX      = 4    # slot spins one player can make a second, faster than the reels animate
 PING_EVERY    = 15   # seconds between keep-alive comments on an idle event stream
 STATS_EVERY   = 30   # seconds between pushes of a player's summary to acid-arcade-db
 CHANGES_EVERY = 60   # seconds between polls of acid-arcade-db for renamed and deleted accounts
@@ -629,6 +631,11 @@ def slots_info():
 def slots_spin(user_id: int, username: str):
 	'''Spin the reels.'''
 
+	now   = time.time()
+	spins = [t for t in SPINS.get(user_id, []) if t > now - 1]
+	if len(spins) >= SPIN_MAX:
+		return api_error('slow down a little', 429)
+	SPINS[user_id] = spins + [now]
 	result = slots.spin(user_id, username, payload().get('bet'))
 	return api_error(result['error']) if 'error' in result else jsonify(result)
 

@@ -302,6 +302,21 @@ class TestArcade(unittest.TestCase):
 		with storage.DB_LOCK, storage.db_connect() as c:
 			storage.delete_user(c, 9005)
 
+	def test_spin_rate_and_table_chat(self):
+		'''Slot spins are limited per second, and only players at a table (or its owner) can chat there.'''
+
+		self.session_as(9401, 'spinner')
+		auth = {'X-Auth-Token': 't'}
+		codes = [self.client.post('/slots/spin', headers=auth, json={'bet': slots.BETS[0]}).status_code for _ in range(app.SPIN_MAX + 1)]
+		self.assertEqual(codes, [200] * app.SPIN_MAX + [429])
+		res = self.client.post('/tables/create', headers=auth, json={'game': 'blackjack', 'stakes': blackjack.STAKES[0][0]})
+		tid = res.get_json()['id']
+		self.addCleanup(hub.TABLES.pop, tid, None)
+		self.assertEqual(self.client.post('/chat', headers=auth, json={'room': tid, 'text': 'owner here'}).status_code, 200)
+		with mock.patch.object(arcade, 'session', return_value={'user_id': 9402, 'username': 'lurker', 'admin': False}):
+			res = self.client.post('/chat', headers=auth, json={'room': tid, 'text': 'hi'})
+		self.assertEqual(res.get_json()['error'], 'sit at the table to chat here')
+
 	def test_table_limit_per_ip(self):
 		'''An IP address can have 5 player made tables open across accounts, other IP addresses are not held back.'''
 
