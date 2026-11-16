@@ -33,6 +33,7 @@ MAXED_COST    = 15                  # borrowing right up to the credit limit cos
 REPAY_SHARE   = 4                   # 1/4 of every profit goes to the debt
 SIGNUP_EVERY  = 86400               # one new account per IP address in this many seconds
 TIPS          = (100, 500, 2_500, 10_000) # cents a player can tip the dealer
+SEND_MAX      = 1_000_000           # cents, the most one transfer out to another arcade game can take ($10,000)
 JACKPOT_SEED  = 5_000_000           # cents, the slots jackpot starts (and restarts after every win) at $50,000, put up by the house
 JACKPOT_USER  = 0                   # ledger user id for moves in and out of the jackpot, which belongs to nobody yet
 FEED_KEEP     = 200                 # live feed results kept in the database
@@ -116,6 +117,40 @@ def credit_terms(score: int) -> tuple:
 	'''Return (credit limit in cents, daily interest) for a credit score.'''
 
 	return next((limit, rate) for under, limit, rate in CREDIT_TIERS if under is None or score < under)
+
+
+def chips_out(user_id: int, amount: int, game: str, ref: str) -> tuple:
+	'''Take chips out of the casino for another arcade game (Wall Street deposits). The chips leave the economy, the house gets nothing. Returns (balance after, None) or (None, error). Each ref is taken once, a repeat returns the first result.
+
+	:param ref: the other game's unique id for the transfer, so a retry after a timeout never takes the chips twice
+	'''
+
+	if type(user_id) is not int or type(amount) is not int or not 0 < amount <= SEND_MAX or not isinstance(game, str) or not game or not isinstance(ref, str) or not 0 < len(ref) <= 64:
+		return None, 'bad transfer'
+	with DB_LOCK, db_connect() as c:
+		done = c.execute('SELECT user_id, amount, balance FROM transfers_out WHERE ref=?', (ref,)).fetchone()
+		if done:
+			return (done['balance'], None) if (done['user_id'], done['amount']) == (user_id, amount) else (None, 'that transfer id was used for another transfer')
+		user = c.execute('SELECT balance, owed FROM users WHERE id=?', (user_id,)).fetchone()
+		if not user:
+			return None, 'no casino account yet, open the casino once first'
+		if user['owed']:
+			return None, 'pay off your casino loan first'
+		if in_play(c, user_id):
+			return None, 'finish your casino hands and leave the poker table first'
+		if user['balance'] < amount:
+			return None, 'not enough casino chips'
+		bal = move(c, user_id, -amount, game[:20], f'sent to {game[:20]}')
+		c.execute('INSERT INTO transfers_out(ref, user_id, amount, game, balance, at) VALUES(?, ?, ?, ?, ?, ?)', (ref, user_id, amount, game[:20], bal, int(time.time())))
+	return bal, None
+
+
+def chips_view(user_id: int) -> dict:
+	'''Return what another arcade game needs to know about a player's chips: {balance, owed, in_play}, or None without a casino account.'''
+
+	with db_connect() as c:
+		user = c.execute('SELECT balance, owed FROM users WHERE id=?', (user_id,)).fetchone()
+		return {'balance': user['balance'], 'owed': user['owed'], 'in_play': in_play(c, user_id)} if user else None
 
 
 def db_connect() -> sqlite3.Connection:
@@ -261,6 +296,14 @@ def init_db():
 			worth    INTEGER NOT NULL,
 			house    INTEGER NOT NULL,
 			at       INTEGER NOT NULL
+		)''')
+		c.execute('''CREATE TABLE IF NOT EXISTS transfers_out (
+			ref     TEXT PRIMARY KEY,
+			user_id INTEGER NOT NULL,
+			amount  INTEGER NOT NULL,
+			game    TEXT NOT NULL,
+			balance INTEGER NOT NULL,
+			at      INTEGER NOT NULL
 		)''')
 		c.execute('''CREATE TABLE IF NOT EXISTS rewards_paid (
 			id      INTEGER PRIMARY KEY,

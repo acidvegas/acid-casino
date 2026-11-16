@@ -98,8 +98,20 @@ Players also earn chips outside the casino: beating the computer in the other ar
 | `ARCADE_PUBLIC_URL` | Public arcade site used for pictures and account settings. `{domain}` is replaced with the player's parent domain, so `chess.supernets.org` links to `arcade.supernets.org` *(setup.sh defaults it to `https://arcade.{domain}`)* |
 | `ARCADE_GAME`       | This game's slug in acid-arcade-db *(`casino`, set by setup.sh)*                       |
 | `ARCADE_KEY`        | This game's key, needed when acid-arcade-db has `ARCADE_GAME_KEYS` set                 |
+| `CASINO_KEY`        | Shared key other arcade games send as `X-Casino-Key` to the internal API. Unset turns the internal API off |
 
 With `ARCADE_URL` set, `setup.sh` also joins the container to the `arcade` docker network.
+
+### Internal API
+
+Port `20006` answers only on the `arcade` docker network and is never published. Other arcade games use it to take chips out of the casino *(Wall Street deposits)*. The chips leave the economy, the house gets nothing, and the transfer shows in the wallet as a ledger line named after the game.
+
+| Route                   | Body                              | Reply                          |
+|-------------------------|-----------------------------------|--------------------------------|
+| `POST /internal/chips`  | `{user_id}`                       | `{balance, owed, in_play}` or 404 |
+| `POST /internal/debit`  | `{user_id, amount, game, ref}`    | `{balance}` or 400 with the reason |
+
+`amount` is in cents, at most $10,000. A player with a loan, or with chips on a table, can not send chips. `ref` is the calling game's id for the transfer: a repeat of it is answered with the first result and takes nothing, so a timed out call can be retried safely.
 
 ## Tests
 

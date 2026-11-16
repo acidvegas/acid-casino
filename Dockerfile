@@ -17,11 +17,12 @@ ENV PYTHONUNBUFFERED=1
 # Run as an unprivileged user that owns only the data directory
 RUN adduser -D -u 10001 app && mkdir -p /data && chown app:app /data
 
-EXPOSE 20005
+# 20005 is the site, 20006 the internal API for other arcade games (never publish it)
+EXPOSE 20005 20006
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD wget -qO- http://127.0.0.1:20005/healthz || exit 1
 
 USER app
 
 # Poker tables, captchas and blackjack shoes live in process memory, so run a single gevent worker
-CMD ["gunicorn", "--worker-class", "gevent", "--workers", "1", "--worker-connections", "1000", "--graceful-timeout", "5", "--bind", "0.0.0.0:20005", "app:app"]
+CMD ["gunicorn", "--worker-class", "gevent", "--workers", "1", "--worker-connections", "1000", "--graceful-timeout", "5", "--bind", "0.0.0.0:20005", "--bind", "0.0.0.0:20006", "app:app"]

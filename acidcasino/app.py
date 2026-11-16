@@ -3,6 +3,7 @@
 # acidcasino/app.py
 
 import functools
+import hmac
 import json
 import os
 import queue
@@ -21,7 +22,7 @@ import poker
 import roulette
 import slots
 from auth import USERNAME_RE, attempt, blocked, captcha_create, captcha_verify, create_session, delete_session, mirror_user, request_token, request_user, session_user
-from storage import CREDIT_TIERS, DB_LOCK, DEBT_CAP, HOUSE_START, JACKPOT_SEED, LATE_AFTER, LATE_COST, LOAN_AGE, LOAN_FREEZE, LOAN_MIN, LOAN_WAGERED, MAXED_COST, PAID_FAST, PAID_OK, REFILL_AMOUNT, REFILL_UNDER, REFILL_WAIT, REPAY_SHARE, SCORE_RANGE, START_BALANCE, TIPS, accrue, borrow, db_connect, delete_user, fame, house_balance, init_db, jackpot, leaderboard, money, prune_sessions, refill_request, refund_bets, rename_user, repay, rewards_pay, signup_allowed, summaries, tip, wallet, wallet_stamp
+from storage import CREDIT_TIERS, DB_LOCK, DEBT_CAP, HOUSE_START, JACKPOT_SEED, LATE_AFTER, LATE_COST, LOAN_AGE, LOAN_FREEZE, LOAN_MIN, LOAN_WAGERED, MAXED_COST, PAID_FAST, PAID_OK, REFILL_AMOUNT, REFILL_UNDER, REFILL_WAIT, REPAY_SHARE, SCORE_RANGE, START_BALANCE, TIPS, accrue, borrow, chips_out, chips_view, db_connect, delete_user, fame, house_balance, init_db, jackpot, leaderboard, money, prune_sessions, refill_request, refund_bets, rename_user, repay, rewards_pay, signup_allowed, summaries, tip, wallet, wallet_stamp
 
 
 app = Flask(__name__)
@@ -44,6 +45,8 @@ STATS_SENT    = {}   # user id -> (main, stats) last pushed to acid-arcade-db
 PRESENT_EVERY = 30   # seconds between reports of who has the casino open to acid-arcade-db
 REWARDS_EVERY = 15   # seconds between polls of acid-arcade-db for casino chips earned in the rest of the arcade
 GAMES         = {'blackjack': blackjack, 'poker': poker, 'roulette': roulette} # table game -> the module that runs it
+INTERNAL_PORT = int(os.environ.get('CASINO_INTERNAL_PORT', '20006')) # port other arcade games call, never published outside the arcade docker network
+CASINO_KEY    = os.environ.get('CASINO_KEY', '') # shared key other arcade games send as X-Casino-Key, the internal routes are off without it
 
 if PROXIES:
 	app.wsgi_app = ProxyFix(app.wsgi_app, x_for=PROXIES, x_proto=PROXIES, x_host=PROXIES)
@@ -116,6 +119,20 @@ def house_tick() -> bool:
 		return False
 	hub.HOUSE.update(new)
 	return True
+
+
+def internal_only(fn):
+	'''Only answer a route on the internal port with the right X-Casino-Key. Without CASINO_KEY set the internal routes do not exist.'''
+
+	@functools.wraps(fn)
+	def wrapper(*args, **kwargs):
+		sock = request.environ.get('gunicorn.socket')
+		if not CASINO_KEY or not (request.environ.get('casino.internal') or (sock and sock.getsockname()[1] == INTERNAL_PORT)):
+			abort(404)
+		if not hmac.compare_digest(CASINO_KEY, request.headers.get('X-Casino-Key') or ''):
+			return api_error('missing or wrong casino key', 403)
+		return fn(*args, **kwargs)
+	return wrapper
 
 
 def lobby_view(user_id: int) -> dict:
@@ -647,6 +664,28 @@ def repay_debt(user_id: int, _: str):
 	error = repay(user_id, payload().get('amount'))
 	hub.notify()
 	return api_error(error) if error else jsonify(wallet(user_id))
+
+
+@app.route('/internal/chips', methods=['POST'])
+@internal_only
+def internal_chips():
+	'''Another arcade game asks about a player's chips: {user_id} -> {balance, owed, in_play}.'''
+
+	view = chips_view(payload().get('user_id'))
+	return jsonify(view) if view else api_error('no casino account', 404)
+
+
+@app.route('/internal/debit', methods=['POST'])
+@internal_only
+def internal_debit():
+	'''Another arcade game takes chips out of the casino: {user_id, amount, game, ref} -> {balance}.'''
+
+	data       = payload()
+	bal, error = chips_out(data.get('user_id'), data.get('amount'), data.get('game'), data.get('ref'))
+	if error:
+		return api_error(error)
+	hub.notify()
+	return jsonify({'balance': bal})
 
 
 @app.route('/healthz')
