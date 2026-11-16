@@ -10,13 +10,18 @@ import tempfile
 import time
 import unittest
 
+from fractions import Fraction
+from unittest import mock
+
 os.environ['CASINO_DATA_DIR'] = tempfile.mkdtemp(prefix='acidcasino-test-')
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'acidcasino'))
 
 import blackjack
 import cards
+import chat
 import hub
 import poker
+import roulette
 import slots
 import storage
 
@@ -35,6 +40,13 @@ def played(user_id: int):
 		c.execute('UPDATE users SET wagered=? WHERE id=?', (storage.LOAN_WAGERED, user_id))
 
 
+def jackpot() -> int:
+	'''Return the slots jackpot.'''
+
+	with storage.db_connect() as c:
+		return storage.jackpot(c)
+
+
 def make_user(name: str, balance: int = 100_000) -> int:
 	'''Create a test account and return its id.'''
 
@@ -49,11 +61,35 @@ def bal(user_id: int) -> int:
 		return storage.balance(c, user_id)
 
 
+def rigged_rng(jackpot_draw: int):
+	'''Patch the shared RNG so every reel stops at 0 and the jackpot draw comes out as given.'''
+
+	return mock.patch.object(slots.RNG, 'randrange', side_effect=lambda n: jackpot_draw if n == slots.JACKPOT_ODDS else 0)
+
+
 def rig(t, player: list, dealer: list, extra: list = ()):
 	'''Stack a solo table's shoe: player cards, dealer cards, then the cards drawn after.'''
 
 	order  = [player[0], dealer[0], player[1], dealer[1], *extra]
 	t.shoe = ['2c'] * 300 + list(reversed(order))
+
+
+def rl_round(t, result: int):
+	'''Spin a roulette table that has its bets down, land the ball on a pocket and pay out.'''
+
+	with mock.patch.object(roulette.RNG, 'choice', return_value=result):
+		roulette.spin(t)
+	t.next_at = 0
+	roulette.tick(t)
+
+
+def rl_table(name: str, wheel: str = 'european', stakes: str = 'low', balance: int = 100_000) -> tuple:
+	'''Return (user id, solo roulette table with them seated).'''
+
+	u = make_user(name, balance)
+	t = roulette.Table('r' + name, 'Test', stakes, wheel, solo=True)
+	roulette.sit(t, u, name)
+	return u, t
 
 
 def solo(name: str, balance: int = 100_000) -> tuple:
@@ -329,6 +365,238 @@ class TestHouseCover(unittest.TestCase):
 		poker.leave(t, 0 if t.seats[0] and t.seats[0]['user_id'] == a else next(i for i, s in enumerate(t.seats) if s and s['user_id'] == a))
 		self.assertIsNone(poker.join(t, b, 'pd2', 4_000))
 		self.assertIn('pay off your debt', poker.join(t, a, 'pd1', 4_000))
+
+
+class TestJackpot(unittest.TestCase):
+	def tearDown(self):
+		hub.HOUSE.clear()
+
+	def test_chance_scales_with_the_bet(self):
+		'''A spin hits when the draw lands under the bet in cents, so a $1,000 spin is 1,000 times likelier than a $1 one and hits once in 50,000.'''
+
+		self.assertEqual(slots.JACKPOT_ODDS // slots.BETS[-1], 50_000)
+		self.assertEqual(Fraction(slots.BETS[-1], slots.JACKPOT_ODDS) / Fraction(slots.BETS[0], slots.JACKPOT_ODDS), 1_000)
+		u = make_user('jp1', 1_000_000)
+		with rigged_rng(99):
+			self.assertTrue(slots.spin(u, 'jp1', 100)['jackpot']) # 99 < 100
+		with rigged_rng(100):
+			self.assertFalse(slots.spin(u, 'jp1', 100)['jackpot'])
+		with rigged_rng(99_999):
+			self.assertTrue(slots.spin(u, 'jp1', 100_000)['jackpot'])
+
+	def test_added_rtp(self):
+		'''Over the long run the jackpot pays back every 1% put in plus the $50,000 seed of every win: 1% + 0.1% = 1.1% on top of the reels.'''
+
+		self.assertAlmostEqual(slots.jackpot_rtp(), 0.011)
+		self.assertAlmostEqual(slots.rtp() + slots.jackpot_rtp(), 0.965 + 0.011, delta=0.005)
+
+	def test_funded_by_the_house(self):
+		u = make_user('jp2', 1_000_000)
+		pot, bank = jackpot(), house()
+		with rigged_rng(slots.JACKPOT_ODDS - 1):
+			res = slots.spin(u, 'jp2', 10_000)
+		self.assertEqual(res['jackpot'], 0)
+		self.assertEqual(jackpot(), pot + 100) # 1% of the bet
+		self.assertEqual(res['pot'], pot + 100)
+		self.assertEqual(house(), bank + 10_000 - res['payout'] - 100)
+		self.assertEqual(bal(u), 1_000_000 - 10_000 + res['payout']) # the player's side is untouched
+		with storage.db_connect() as c:
+			row = c.execute('SELECT user_id, amount, balance, game FROM ledger ORDER BY id DESC LIMIT 1').fetchone()
+		self.assertEqual(tuple(row), (storage.JACKPOT_USER, 100, pot + 100, 'jackpot'))
+
+	def test_win_pays_the_pot_and_reseeds(self):
+		u = make_user('jp3', 1_000_000)
+		with storage.DB_LOCK, storage.db_connect() as c:
+			storage.house_move(c, -1_000_000)
+			storage.jackpot_move(c, 1_000_000, 'test top up')
+		pot, bank = jackpot(), house()
+		with rigged_rng(0):
+			res = slots.spin(u, 'jp3', 100)
+		self.assertEqual(res['jackpot'], pot + 1)
+		self.assertEqual(bal(u), 1_000_000 - 100 + res['payout'] + pot + 1)
+		self.assertEqual(jackpot(), storage.JACKPOT_SEED)
+		self.assertEqual(res['pot'], storage.JACKPOT_SEED)
+		self.assertEqual(house(), bank + 100 - res['payout'] - 1 - storage.JACKPOT_SEED)
+		with storage.db_connect() as c:
+			notes = [r['note'] for r in c.execute('SELECT note FROM ledger WHERE user_id=? ORDER BY id DESC LIMIT 2', (storage.JACKPOT_USER,))]
+			paid  = c.execute('SELECT amount, note FROM ledger WHERE user_id=? ORDER BY id DESC LIMIT 1', (u,)).fetchone()
+		self.assertEqual(notes, [f'seeded with {storage.money(storage.JACKPOT_SEED)} from the house', 'won by jp3'])
+		self.assertEqual(paid['amount'], pot + 1)
+		self.assertIn('jackpot', paid['note'])
+		self.assertTrue(any('SLOTS JACKPOT' in m['text'] for m in chat.ROOMS['lobby']))
+		self.assertEqual(chat.FEED[-1]['net'], res['payout'] + pot + 1 - 100)
+
+	def test_persists_across_restarts(self):
+		with storage.DB_LOCK, storage.db_connect() as c:
+			storage.house_move(c, -12_345)
+			storage.jackpot_move(c, 12_345, 'test top up')
+		pot, bank = jackpot(), house()
+		storage.init_db() # a restart opens the same database
+		self.assertEqual((jackpot(), house()), (pot, bank))
+
+	def test_cover_keeps_the_seed_back(self):
+		hub.HOUSE['balance'] = storage.JACKPOT_SEED + 5_000_000
+		self.assertEqual(hub.cover(), 5_000)
+		hub.HOUSE['balance'] = storage.JACKPOT_SEED
+		self.assertEqual(hub.cover(), 0)
+
+
+class TestRoulette(unittest.TestCase):
+	def tearDown(self):
+		hub.HOUSE.clear()
+
+	def test_wheels(self):
+		for wheel, size in (('european', 37), ('american', 38)):
+			pockets = roulette.WHEELS[wheel]
+			self.assertEqual(sorted(pockets), list(range(size)))
+		self.assertEqual(roulette.WHEELS['european'][:5], [0, 32, 15, 19, 4])
+		self.assertEqual(roulette.WHEELS['american'][18:21], [1, roulette.DOUBLE_0, 27])
+		self.assertEqual(len(roulette.RED), 18)
+		self.assertEqual({n for n in range(1, 37) if n not in roulette.RED} & {1, 3, 5, 7, 9}, set())
+
+	def test_every_bet_returns_the_true_odds_less_the_zero(self):
+		'''Every bet returns 36/37 on the European wheel and 36/38 on the American one, except the 5-number top line at 35/38.'''
+
+		counts = {'european': 157, 'american': 161}
+		for wheel, pockets in roulette.WHEELS.items():
+			spots = roulette.SPOTS[wheel]
+			self.assertEqual(len(spots), counts[wheel])
+			for key, spot in spots.items():
+				back = sum(roulette.payout(spots, {key: 100}, p) for p in pockets)
+				want = Fraction(35, 38) if key == 'basket' else Fraction(36, len(pockets))
+				self.assertEqual(Fraction(back, 100 * len(pockets)), want, key)
+
+	def test_payout_of_every_bet_kind(self):
+		pays = {'straight:17': 35, 'split:17-20': 17, 'street:16-17-18': 11, 'corner:16-17-19-20': 8, 'line:13-14-15-16-17-18': 5, 'dozen:2': 2, 'column:2': 2, 'black': 1, 'odd': 1, 'low': 1}
+		for wheel in roulette.WHEELS:
+			spots = roulette.SPOTS[wheel]
+			for key, mult in pays.items():
+				self.assertEqual(roulette.payout(spots, {key: 100}, 17), 100 * (mult + 1), (wheel, key))
+			for key in ('red', 'even', 'high', 'dozen:1', 'column:1', 'straight:0'):
+				self.assertEqual(roulette.payout(spots, {key: 100}, 17), 0, (wheel, key))
+			for key in ('red', 'black', 'odd', 'even', 'low', 'high', 'dozen:1', 'column:3'):
+				self.assertEqual(roulette.payout(spots, {key: 100}, 0), 0, (wheel, key)) # zero loses every outside bet
+		eu, us = roulette.SPOTS['european'], roulette.SPOTS['american']
+		self.assertEqual(roulette.payout(eu, {'corner:0-1-2-3': 100}, 0), 900)
+		self.assertEqual(roulette.payout(eu, {'street:0-2-3': 100}, 3), 1_200)
+		self.assertEqual(roulette.payout(us, {'basket': 100}, roulette.DOUBLE_0), 700)
+		self.assertEqual(roulette.payout(us, {'split:0-00': 100}, roulette.DOUBLE_0), 1_800)
+		self.assertEqual(roulette.payout(us, {'straight:00': 100}, roulette.DOUBLE_0), 3_600)
+		self.assertEqual(roulette.payout(us, {'street:0-00-2': 100}, 2), 1_200)
+
+	def test_round_pays_from_the_house(self):
+		u, t = rl_table('rl1')
+		before = house()
+		self.assertIsNone(roulette.place(t, 0, [{'spot': 'straight:17', 'amount': 1_000}, {'spot': 'red', 'amount': 2_000}, {'spot': 'dozen:2', 'amount': 500}], False))
+		self.assertEqual(bal(u), 100_000 - 3_500)
+		self.assertIsNotNone(t.deadline)
+		rl_round(t, 17) # black, middle dozen
+		self.assertEqual(t.phase, 'done')
+		self.assertEqual(t.seats[0]['net'], 35_000 - 2_000 + 1_000)
+		self.assertEqual(bal(u), 100_000 + 34_000)
+		self.assertEqual(house(), before - 34_000)
+		self.assertEqual(list(t.history), [17])
+		self.assertEqual(chat.FEED[-1]['net'], 34_000)
+		with storage.db_connect() as c:
+			self.assertIsNone(c.execute('SELECT 1 FROM rl_bets').fetchone())
+		t.next_at = 0
+		roulette.tick(t)
+		self.assertEqual((t.phase, t.seats[0]['bets']), ('betting', {}))
+		self.assertEqual(t.seats[0]['last'], {'straight:17': 1_000, 'red': 2_000, 'dozen:2': 500}) # for repeat last bet
+		with mock.patch.object(roulette.RNG, 'choice', return_value=0):
+			self.assertIsNone(roulette.place(t, 0, [{'spot': 'even', 'amount': 1_000}], True)) # ready on a solo table spins at once
+		self.assertEqual(t.phase, 'spinning')
+		t.next_at = 0
+		roulette.tick(t)
+		self.assertEqual(bal(u), 100_000 + 34_000 - 1_000) # even money loses on zero
+
+	def test_shared_table(self):
+		a, b = make_user('rlA'), make_user('rlB')
+		t = roulette.Table('rshared', 'Shared', 'low', 'american')
+		roulette.sit(t, a, 'rlA')
+		roulette.sit(t, b, 'rlB')
+		self.assertEqual(roulette.sit(t, a, 'rlA'), 'you are already at this table')
+		roulette.place(t, 0, [{'spot': 'straight:00', 'amount': 100}], True)
+		self.assertEqual(t.phase, 'betting') # waits for the other player
+		with mock.patch.object(roulette.RNG, 'choice', return_value=roulette.DOUBLE_0):
+			roulette.place(t, 1, [{'spot': 'basket', 'amount': 1_000}], True)
+		self.assertEqual(t.phase, 'spinning')
+		self.assertEqual(roulette.place(t, 1, [], False), 'no more bets, wait for the next spin')
+		roulette.leave(t, 1) # leaving mid spin rides the bet out
+		t.next_at = 0
+		roulette.tick(t)
+		self.assertEqual((bal(a), bal(b)), (100_000 + 3_500, 100_000 + 6_000))
+		t.next_at = 0
+		roulette.tick(t)
+		self.assertIsNone(t.seats[1])
+
+	def test_bet_validation(self):
+		u, t = rl_table('rl2')
+		_, us = rl_table('rl3', 'american')
+		bad = [
+			([{'spot': 'straight:37', 'amount': 100}], 'that is not a bet on this table'),
+			([{'spot': 'straight:00', 'amount': 100}], 'that is not a bet on this table'), # no double zero in Europe
+			([{'spot': 'basket', 'amount': 100}], 'that is not a bet on this table'),
+			([{'spot': 'split:1-5', 'amount': 100}], 'that is not a bet on this table'),
+			([{'spot': 'split:3-4', 'amount': 100}], 'that is not a bet on this table'), # 3 and 4 are not side by side on the layout
+			([{'spot': 'corner:1-2-3-4', 'amount': 100}], 'that is not a bet on this table'),
+			([{'spot': 'corner:3-4-6-7', 'amount': 100}], 'that is not a bet on this table'),
+			([{'spot': 'street:2-3-4', 'amount': 100}], 'that is not a bet on this table'),
+			([{'spot': 'straight:-1', 'amount': 100}], 'that is not a bet on this table'),
+			([{'spot': 17, 'amount': 100}], 'that is not a bet on this table'),
+			(['red'], 'that is not a bet on this table'),
+			([{'spot': 'red', 'amount': 100.0}], 'bets must be whole cents'),
+			([{'spot': 'red', 'amount': True}], 'bets must be whole cents'),
+			([{'spot': 'red', 'amount': '100'}], 'bets must be whole cents'),
+			([{'spot': 'red', 'amount': 99}], 'bets here are $1 to $100 a spot'),
+			([{'spot': 'red', 'amount': 10_001}], 'bets here are $1 to $100 a spot'),
+			([{'spot': 'red', 'amount': 100}, {'spot': 'red', 'amount': 100}], 'each spot can only be bet once'),
+			([{'spot': f'straight:{n}', 'amount': 10_000} for n in range(11)], 'the most on the table in one spin here is $1,000'),
+			({'spot': 'red', 'amount': 100}, 'bad bets'),
+		]
+		for bets, error in bad:
+			self.assertEqual(roulette.place(t, 0, bets, False), error, bets)
+		self.assertEqual(bal(u), 100_000)
+		self.assertIsNone(t.deadline)
+		self.assertIsNone(roulette.place(t, 0, [{'spot': 'split:3-6', 'amount': 100}, {'spot': 'corner:1-2-4-5', 'amount': 100}, {'spot': 'split:0-3', 'amount': 100}], False))
+		self.assertIsNone(roulette.place(us, 0, [{'spot': 'straight:00', 'amount': 100}, {'spot': 'split:00-3', 'amount': 100}, {'spot': 'basket', 'amount': 100}], False))
+		self.assertEqual(roulette.place(us, 0, [{'spot': 'corner:0-1-2-3', 'amount': 100}], False), 'that is not a bet on this table') # the first four is European only
+		poor, pt = rl_table('rl4', balance=500)
+		self.assertEqual(roulette.place(pt, 0, [{'spot': 'red', 'amount': 1_000}], False), 'not enough chips')
+		self.assertEqual(bal(poor), 500)
+
+	def test_house_cover(self):
+		u, t = rl_table('rl5', stakes='vip', balance=10_000_000)
+		hub.HOUSE['balance'] = storage.JACKPOT_SEED + 1_000_000 * 35 * hub.COVER_SHARE # a $10,000 straight up win is just coverable
+		self.assertEqual(t.max_bet, 1_000_000)
+		self.assertIsNone(roulette.place(t, 0, [{'spot': 'straight:5', 'amount': 1_000_000}], False))
+		self.assertEqual(roulette.place(t, 0, [{'spot': 'straight:5', 'amount': 1_000_000}, {'spot': 'split:5-8', 'amount': 10_000}], False), 'the house can not cover that much riding on one number right now')
+		self.assertIsNone(roulette.place(t, 0, [{'spot': 'straight:5', 'amount': 1_000_000}, {'spot': 'split:7-8', 'amount': 10_000}], False)) # different numbers never win together
+		hub.HOUSE['balance'] = storage.JACKPOT_SEED + 9_999 * 35 * hub.COVER_SHARE
+		self.assertEqual(t.max_bet, 9_999) # under the $100 table minimum
+		self.assertEqual(roulette.place(t, 0, [{'spot': 'red', 'amount': 1_000_000}], False), 'the house is too low on chips to cover this table right now')
+		roulette.place(t, 0, [], False)
+		self.assertEqual(bal(u), 10_000_000)
+
+	def test_refund_on_restart(self):
+		u, t = rl_table('rl6')
+		roulette.place(t, 0, [{'spot': 'odd', 'amount': 5_000}, {'spot': 'straight:9', 'amount': 2_500}], True) # solo and ready, so it is spinning when the restart hits
+		self.assertEqual(t.phase, 'spinning')
+		self.assertEqual(bal(u), 100_000 - 7_500)
+		with storage.db_connect() as c:
+			self.assertTrue(storage.in_play(c, u))
+		storage.refund_bets()
+		self.assertEqual(bal(u), 100_000)
+		with storage.db_connect() as c:
+			self.assertIsNone(c.execute('SELECT 1 FROM rl_bets').fetchone())
+
+	def test_leave_before_the_spin_refunds(self):
+		u, t = rl_table('rl7')
+		roulette.place(t, 0, [{'spot': 'high', 'amount': 1_000}], False)
+		roulette.leave(t, 0)
+		self.assertEqual(bal(u), 100_000)
+		self.assertIsNone(t.seats[0])
+		self.assertFalse(t.busy())
 
 
 class TestSlots(unittest.TestCase):

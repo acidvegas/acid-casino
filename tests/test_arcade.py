@@ -28,6 +28,7 @@ import arcade
 import auth
 import blackjack
 import chat
+import roulette
 import slots
 import storage
 
@@ -388,6 +389,25 @@ class TestArcade(unittest.TestCase):
 			res = self.client.post('/tables/create', headers={'X-Auth-Token': 't'}, json={'game': 'blackjack', 'stakes': blackjack.STAKES[0][0]}, environ_base=ip)
 		self.assertEqual(res.status_code, 200)
 		made.append(res.get_json()['id'])
+
+	def test_roulette_tables(self):
+		'''Both wheels have house tables in the lobby, and a player can open a solo table, sit and bet through the API.'''
+
+		with storage.DB_LOCK, storage.db_connect() as c:
+			c.execute('INSERT OR REPLACE INTO users(id, username, password_hash, created_at, balance) VALUES(9601, ?, ?, 0, 100000)', ('rlapi', 'x'))
+		self.addCleanup(lambda: [hub.TABLES.pop(t, None) for t in [t for t, v in hub.TABLES.items() if v.owner == 9601]])
+		house = {t['id'] for t in app.lobby_view(None)['tables'] if t['game'] == 'roulette'}
+		self.assertEqual(house, {f'rl-{w}-{k}' for w in ('eu', 'am') for k, *_ in roulette.STAKES})
+		with mock.patch.object(arcade, 'session', return_value={'user_id': 9601, 'username': 'rlapi', 'admin': False}):
+			self.assertEqual(self.client.post('/tables/create', headers={'X-Auth-Token': 't'}, json={'game': 'roulette', 'stakes': 'low', 'wheel': 'mars'}).status_code, 400)
+			tid = self.client.post('/tables/create', headers={'X-Auth-Token': 't'}, json={'game': 'roulette', 'stakes': 'low', 'wheel': 'american', 'solo': True}).get_json()['id']
+			self.assertEqual(self.client.post('/table/sit', headers={'X-Auth-Token': 't'}, json={'table': tid}).status_code, 200)
+			res = self.client.post('/rl/bet', headers={'X-Auth-Token': 't'}, json={'table': tid, 'bets': [{'spot': 'basket', 'amount': 500}], 'ready': False})
+			self.assertEqual(res.get_json()['seats'][0]['bets'], {'basket': 500})
+			self.assertEqual(self.client.post('/rl/bet', headers={'X-Auth-Token': 't'}, json={'table': tid, 'bets': [{'spot': 'basket', 'amount': 5.5}]}).status_code, 400)
+			self.assertEqual(self.client.post('/table/leave', headers={'X-Auth-Token': 't'}, json={'table': tid}).status_code, 200)
+		with storage.db_connect() as c:
+			self.assertEqual(storage.balance(c, 9601), 100_000)
 
 
 

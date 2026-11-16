@@ -1,13 +1,13 @@
 # acid-casino
 
-Blackjack, no-limit Texas Hold'em and slots in the browser with play chips, built with Flask.
+Blackjack, no-limit Texas Hold'em, roulette and slots in the browser with play chips, built with Flask.
 
 ## Features
 
 - Accounts only *(username, password and a captcha)*. Every new account starts with $1,000 in chips
 - Chips are tracked in cents with a full ledger of every bet and payout
-- The house starts with $1,000,000,000. Every blackjack and slots bet is won from or paid by it, and poker bots play with its money. The goal is to topple it: the first time a player is worth more than the house, it is announced in the lobby and they go into the hall of fame for good, with a crown next to their name everywhere
-- The house always covers its bets. No single bet may be able to win more than 0.1% of the bankroll, so table limits, the biggest slot spin and poker bots all scale down as the house shrinks *(at $1B nothing is limited)*. A table the house can not cover shows as closed until it earns its way back
+- The house starts with $1,000,000,000. Every blackjack, roulette and slots bet is won from or paid by it, and poker bots play with its money. The goal is to topple it: the first time a player is worth more than the house, it is announced in the lobby and they go into the hall of fame for good, with a crown next to their name everywhere
+- The house always covers its bets. No single bet may be able to win more than 0.1% of the bankroll, so table limits, the biggest slot spin, roulette bets and poker bots all scale down as the house shrinks *(at $1B nothing is limited)*. The slots jackpot is money already set aside, and the house always keeps back the $50,000 it needs to start the next one. A table the house can not cover shows as closed until it earns its way back
 - Loans come straight from the house, right away, up to your credit limit. Each account has a credit score from 300 to 850 *(new accounts start at 600)* that sets the limit and the daily interest, charged every hour:
 
   | Score   | Credit limit | Interest a day |
@@ -40,6 +40,15 @@ Blackjack, no-limit Texas Hold'em and slots in the browser with play chips, buil
 - Split pairs *(and any two ten-value cards)* up to 4 hands. Split aces get one card each and can not be split again. 21 on a split hand is not a blackjack
 - Four table limits, like a real casino: $1-$500, $10-$2,500, $100-$10,000 and a VIP $500-$50,000. Bets in play are refunded if the server restarts mid-round
 
+### Roulette
+
+- Two wheels: European with a single zero and American with 0 and 00, each with the real pocket order and red and black numbers, at three house tables apiece. Player tables work like blackjack: public, private with an invite link or solo
+- Up to 6 players at a table, all betting on the same spin, each with their own chip colour on the felt. Once the first chip is down everyone has 20 seconds to bet, or the ball goes round as soon as everyone seated is ready. The pocket is drawn when the betting closes and every screen lands the ball in it
+- Every standard bet: straight up 35 to 1, split 17 to 1, street 11 to 1 *(including the trios with zero)*, corner 8 to 1 *(and the first four 0-1-2-3 on the European wheel)*, six line 5 to 1, the American top line 0-00-1-2-3 at 6 to 1, dozens and columns 2 to 1, and red, black, odd, even, 1-18 and 19-36 at even money. Outside bets lose on zero, with no la partage
+- Every bet returns 36/37 on the European wheel *(a 2.7% house edge)* and 36/38 on the American one *(5.26%)*, except the top line at 35/38 *(7.89%)*
+- Limits per spot and per spin: Low $1-$100 *($1,000 a spin)*, Mid $10-$1,000 *($10,000)* and VIP $100-$10,000 *($100,000)*. The most a spin could win a player must fit in the house cover. Chips on the felt are refunded if the server restarts mid-spin
+- Chip picker, undo, clear, repeat last bet and double, a highlight of the numbers a bet covers, a marker on the winning number and a board of the last numbers
+
 ### Poker
 
 - No-limit Texas Hold'em cash tables, 6 seats each, at six stakes *(Micro $0.25/$0.50 up to VIP $100/$200)*. No-limit, so there is no maximum bet. Buy in for 40 to 250 big blinds; joining a game already going means posting a big blind to be dealt in
@@ -53,8 +62,9 @@ Blackjack, no-limit Texas Hold'em and slots in the browser with play chips, buil
 - 5 reels, 3 rows, 10 fixed lines, with a wild and a scatter. Each winning line is drawn in its own color and numbered, and the win meter steps through every win with what made it and what it paid
 - Bets from $1 to $1,000 a spin, with 5 and 10 spin auto runs
 - 96.5% return to player, worked out exactly from the reel strips and pay table *(see `slots.rtp()`)* and checked against a simulation in the tests
+- A progressive jackpot shared by everyone, shown on the machine and in the lobby. The house puts 1% of every bet into it, on top of the 96.5%, and seeds it with $50,000, again after every win. Any spin can hit it, with a chance of the bet in cents in 5,000,000,000: 1 in 50,000 at $1,000 and 1 in 5,000,000 at $1. Over the long run it adds 1.1% to the return *(the 1% put in plus the seed of every win, see `slots.jackpot_rtp()`)*. The pot is kept in the database and every move in and out of it is in the ledger
 
-Cards, shoes and reel stops come from Python's `secrets` module.
+Cards, shoes, reel stops, the jackpot draw and the roulette pocket come from Python's `secrets` module.
 
 ## Run it
 

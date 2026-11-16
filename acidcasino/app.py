@@ -18,9 +18,10 @@ import blackjack
 import chat
 import hub
 import poker
+import roulette
 import slots
 from auth import USERNAME_RE, attempt, blocked, captcha_create, captcha_verify, create_session, delete_session, mirror_user, request_token, request_user, session_user
-from storage import CREDIT_TIERS, DB_LOCK, DEBT_CAP, HOUSE_START, LATE_AFTER, LATE_COST, LOAN_AGE, LOAN_FREEZE, LOAN_MIN, LOAN_WAGERED, MAXED_COST, PAID_FAST, PAID_OK, REFILL_AMOUNT, REFILL_UNDER, REFILL_WAIT, REPAY_SHARE, SCORE_RANGE, START_BALANCE, TIPS, accrue, borrow, db_connect, delete_user, fame, house_balance, init_db, leaderboard, money, prune_sessions, refill_request, refund_bets, rename_user, repay, signup_allowed, summaries, tip, wallet, wallet_stamp
+from storage import CREDIT_TIERS, DB_LOCK, DEBT_CAP, HOUSE_START, JACKPOT_SEED, LATE_AFTER, LATE_COST, LOAN_AGE, LOAN_FREEZE, LOAN_MIN, LOAN_WAGERED, MAXED_COST, PAID_FAST, PAID_OK, REFILL_AMOUNT, REFILL_UNDER, REFILL_WAIT, REPAY_SHARE, SCORE_RANGE, START_BALANCE, TIPS, accrue, borrow, db_connect, delete_user, fame, house_balance, init_db, jackpot, leaderboard, money, prune_sessions, refill_request, refund_bets, rename_user, repay, signup_allowed, summaries, tip, wallet, wallet_stamp
 
 
 app = Flask(__name__)
@@ -41,6 +42,7 @@ STATS_EVERY   = 30   # seconds between pushes of a player's summary to acid-arca
 CHANGES_EVERY = 60   # seconds between polls of acid-arcade-db for renamed and deleted accounts
 STATS_SENT    = {}   # user id -> (main, stats) last pushed to acid-arcade-db
 PRESENT_EVERY = 30   # seconds between reports of who has the casino open to acid-arcade-db
+GAMES         = {'blackjack': blackjack, 'poker': poker, 'roulette': roulette} # table game -> the module that runs it
 
 if PROXIES:
 	app.wsgi_app = ProxyFix(app.wsgi_app, x_for=PROXIES, x_proto=PROXIES, x_host=PROXIES)
@@ -78,7 +80,7 @@ def arcade_sync():
 				for t in list(hub.TABLES.values()):
 					for i, s in enumerate(t.seats):
 						if s and s.get('user_id') in gone and not s.get('left'):
-							(poker if t.game == 'poker' else blackjack).leave(t, i)
+							GAMES[t.game].leave(t, i)
 				seated = {s.get('user_id') for t in hub.TABLES.values() for s in t.seats if s}
 				for user_id in gone - seated:
 					with DB_LOCK, db_connect() as c:
@@ -103,10 +105,11 @@ def house_tick() -> bool:
 			if arcade.enabled():
 				threading.Thread(target=stats_push, args=(summaries(c, top['id'])[0],), daemon=True).start()
 			chat.event(top['id'], 'record', 'toppled the house')
+		pot    = jackpot(c)
 		crowns = [r['username'] for r in c.execute('SELECT COALESCE(u.username, t.username) AS username FROM topplers t LEFT JOIN users u ON u.id = t.user_id ORDER BY t.at')]
 	if won:
 		chat.add('lobby', None, 'casino', f'{top["username"]} TOPPLED THE HOUSE with {money(top["worth"])} against the house\'s {money(bank)}')
-	new = {'balance': bank, 'start': HOUSE_START, 'top': top and {'name': top['username'], 'worth': top['worth']}, 'crowns': crowns, 'cover': max(0, bank) // hub.COVER_SHARE, 'lending': bank >= LOAN_FREEZE}
+	new = {'balance': bank, 'start': HOUSE_START, 'top': top and {'name': top['username'], 'worth': top['worth']}, 'crowns': crowns, 'cover': max(0, bank - JACKPOT_SEED) // hub.COVER_SHARE, 'lending': bank >= LOAN_FREEZE, 'jackpot': pot}
 	if new == hub.HOUSE:
 		return False
 	hub.HOUSE.update(new)
@@ -137,7 +140,7 @@ def lobby_view(user_id: int) -> dict:
 			'solo'   : getattr(t, 'solo', False),
 			'mine'   : mine,
 		})
-	order = {'blackjack': 0, 'poker': 1}
+	order = {'blackjack': 0, 'roulette': 1, 'poker': 2}
 	tables.sort(key=lambda x: (not x['mine'], not x['house'], order[x['game']], x['id']))
 	return {'tables': tables, 'online': hub.online(), 'house': hub.HOUSE}
 
@@ -210,6 +213,9 @@ def setup():
 		hub.TABLES[f'bj-{key}'] = blackjack.Table(f'bj-{key}', f'{label} Blackjack', key, house=True)
 	for key, label, *_ in poker.STAKES:
 		hub.TABLES[f'pk-{key}'] = poker.Table(f'pk-{key}', f'{label} Hold\'em', key, house=True)
+	for wheel, wheel_name in roulette.WHEEL_NAME.items():
+		for key, label, *_ in roulette.STAKES:
+			hub.TABLES[f'rl-{wheel[:2]}-{key}'] = roulette.Table(f'rl-{wheel[:2]}-{key}', f'{label} {wheel_name} Roulette', key, wheel, house=True)
 	house_tick()
 	hub.start(house_tick)
 	if arcade.enabled():
@@ -259,11 +265,11 @@ def index():
 		'@type'              : ['VideoGame', 'WebApplication'],
 		'name'               : 'acid casino',
 		'url'                : url,
-		'description'        : 'Multiplayer blackjack, no-limit Texas Hold\'em and slots with play chips. Every account starts with $1,000. Real casino rules, no real money.',
+		'description'        : 'Multiplayer blackjack, no-limit Texas Hold\'em, roulette and slots with play chips. Every account starts with $1,000. Real casino rules, no real money.',
 		'image'              : url + 'static/og.png',
 		'applicationCategory': 'GameApplication',
 		'operatingSystem'    : 'Any',
-		'genre'              : ['Casino', 'Card game', 'Blackjack', 'Poker', 'Slots'],
+		'genre'              : ['Casino', 'Card game', 'Blackjack', 'Poker', 'Roulette', 'Slots'],
 		'gamePlatform'       : 'Web browser',
 		'playMode'           : ['SinglePlayer', 'MultiPlayer'],
 		'isAccessibleForFree': True,
@@ -569,6 +575,7 @@ def options():
 
 	return jsonify({
 		'blackjack': [{'id': k, 'label': n, 'text': f'{money(lo)}-{money(hi)}'} for k, n, lo, hi in blackjack.STAKES],
+		'roulette' : [{'id': k, 'label': n, 'text': f'{money(lo)}-{money(hi)}', 'spin': f'{money(top)} a spin'} for k, n, lo, hi, top in roulette.STAKES],
 		'poker'    : [{'id': k, 'label': n, 'text': f'{money(sb)}/{money(bb)}', 'buyin': f'{money(bb * poker.BUY_MIN)}-{money(bb * poker.BUY_MAX)}'} for k, n, sb, bb in poker.STAKES],
 	})
 
@@ -633,6 +640,19 @@ def healthz():
 	return Response('ok\n', mimetype='text/plain')
 
 
+@app.route('/rl/bet', methods=['POST'])
+@login_required
+def rl_bet(user_id: int, _: str):
+	'''Set every chip on the roulette layout for the next spin and say whether to spin.'''
+
+	data = payload()
+	with hub.LOCK:
+		table, seat = my_seat('roulette', user_id)
+		if seat is None:
+			return api_error('you are not at this table')
+		return reply(table, user_id, roulette.place(table, seat, data.get('bets'), bool(data.get('ready'))))
+
+
 @app.route('/robots.txt')
 def robots():
 	'''Let crawlers in and point them at the sitemap.'''
@@ -678,7 +698,7 @@ def table_leave(user_id: int, _: str):
 		seat  = next((i for i, s in enumerate(table.seats) if s and s.get('user_id') == user_id), None) if table else None
 		if seat is None:
 			return api_error('you are not at this table')
-		(poker if table.game == 'poker' else blackjack).leave(table, seat)
+		GAMES[table.game].leave(table, seat)
 		return reply(table, user_id)
 
 
@@ -714,7 +734,7 @@ def table_sit(user_id: int, username: str):
 		if table.game == 'poker':
 			error = poker.join(table, user_id, username, data.get('buyin'), data.get('seat'))
 		else:
-			error = blackjack.sit(table, user_id, username, data.get('seat'))
+			error = GAMES[table.game].sit(table, user_id, username, data.get('seat'))
 		return reply(table, user_id, error)
 
 
@@ -742,7 +762,7 @@ def table_tip(user_id: int, username: str):
 @app.route('/tables/create', methods=['POST'])
 @login_required
 def tables_create(user_id: int, username: str):
-	'''Open a new table: blackjack or poker, any stakes, public or private, with or without bots.'''
+	'''Open a new table: blackjack, roulette or poker, any stakes, public or private, with or without bots.'''
 
 	data    = payload()
 	game    = data.get('game')
@@ -757,6 +777,9 @@ def tables_create(user_id: int, username: str):
 		if game == 'blackjack' and stakes in {s[0] for s in blackjack.STAKES}:
 			solo  = bool(data.get('solo'))
 			table = blackjack.Table(tid, 'Solo blackjack' if solo else f'{username}\'s table', stakes, private=private or solo, owner=user_id, solo=solo)
+		elif game == 'roulette' and stakes in {s[0] for s in roulette.STAKES} and data.get('wheel') in roulette.WHEELS:
+			solo  = bool(data.get('solo'))
+			table = roulette.Table(tid, 'Solo roulette' if solo else f'{username}\'s table', stakes, data.get('wheel'), private=private or solo, owner=user_id, solo=solo)
 		elif game == 'poker' and stakes in {s[0] for s in poker.STAKES}:
 			table = poker.Table(tid, f'{username}\'s table', stakes, private=private, owner=user_id, bots=bool(data.get('bots', True)))
 		else:

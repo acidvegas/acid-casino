@@ -8,13 +8,13 @@ import threading
 import time
 
 import chat
-from storage import HOUSE_START
+from storage import HOUSE_START, JACKPOT_SEED
 
 
 LOCK          = threading.RLock() # guards every table and the chat; always taken before the database lock
 SUBS          = {}               # event stream queue -> user id (None for guests)
 SEEN          = {}               # user id -> last time they had the site open
-TABLES        = {}               # table id -> poker or blackjack table
+TABLES        = {}               # table id -> poker, blackjack or roulette table
 HOUSE         = {}               # house bankroll and the richest player, refreshed every second
 OFFLINE_AFTER = 120              # seconds without the site open before a seat is given up
 CLOSE_AFTER   = 120              # seconds a player made table stays open with nobody at it
@@ -23,9 +23,9 @@ COVER_SHARE   = 1000             # no single bet may be able to win more than 1/
 
 
 def cover() -> int:
-	'''Return the most any one bet may be able to win, in cents, so the house can always pay and never goes under in one hit.'''
+	'''Return the most any one bet may be able to win, in cents, so the house can always pay and never goes under in one hit. The slots jackpot is already set aside, and the house keeps back what it needs to seed the next one.'''
 
-	return max(0, HOUSE.get('balance', HOUSE_START)) // COVER_SHARE
+	return max(0, HOUSE.get('balance', HOUSE_START) - JACKPOT_SEED) // COVER_SHARE
 
 
 def is_online(user_id: int) -> bool:

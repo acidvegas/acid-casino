@@ -33,6 +33,8 @@ MAXED_COST    = 15                  # borrowing right up to the credit limit cos
 REPAY_SHARE   = 4                   # 1/4 of every profit goes to the debt
 SIGNUP_EVERY  = 86400               # one new account per IP address in this many seconds
 TIPS          = (100, 500, 2_500, 10_000) # cents a player can tip the dealer
+JACKPOT_SEED  = 5_000_000           # cents, the slots jackpot starts (and restarts after every win) at $50,000, put up by the house
+JACKPOT_USER  = 0                   # ledger user id for moves in and out of the jackpot, which belongs to nobody yet
 FEED_KEEP     = 200                 # live feed results kept in the database
 LEADERBOARD_N = 25
 
@@ -125,7 +127,7 @@ def db_connect() -> sqlite3.Connection:
 def delete_user(c: sqlite3.Connection, user_id: int):
 	'''Delete every row belonging to an account deleted in acid-arcade-db, its mirrored users row included.'''
 
-	for table in ('sessions', 'ledger', 'loans', 'bj_bets', 'chat', 'poker_seats', 'topplers'):
+	for table in ('sessions', 'ledger', 'loans', 'bj_bets', 'rl_bets', 'chat', 'poker_seats', 'topplers'):
 		c.execute(f'DELETE FROM {table} WHERE user_id=?', (user_id,))
 	c.execute('DELETE FROM users WHERE id=?', (user_id,))
 
@@ -167,9 +169,9 @@ def house_move(c: sqlite3.Connection, amount: int):
 
 
 def in_play(c: sqlite3.Connection, user_id: int) -> bool:
-	'''Return True if the user has chips on a poker table or a blackjack bet in play.'''
+	'''Return True if the user has chips on a poker table or a blackjack or roulette bet in play.'''
 
-	return bool(c.execute('SELECT 1 FROM poker_seats WHERE user_id=? UNION SELECT 1 FROM bj_bets WHERE user_id=?', (user_id, user_id)).fetchone())
+	return bool(c.execute('SELECT 1 FROM poker_seats WHERE user_id=? UNION SELECT 1 FROM bj_bets WHERE user_id=? UNION SELECT 1 FROM rl_bets WHERE user_id=?', (user_id, user_id, user_id)).fetchone())
 
 
 def init_db():
@@ -222,6 +224,12 @@ def init_db():
 			stake    INTEGER NOT NULL,
 			PRIMARY KEY (user_id, table_id)
 		)''')
+		c.execute('''CREATE TABLE IF NOT EXISTS rl_bets (
+			user_id  INTEGER NOT NULL,
+			table_id TEXT NOT NULL,
+			stake    INTEGER NOT NULL,
+			PRIMARY KEY (user_id, table_id)
+		)''')
 		c.execute('''CREATE TABLE IF NOT EXISTS chat (
 			id      INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_id INTEGER,
@@ -265,6 +273,25 @@ def init_db():
 					c.execute("UPDATE users SET wagered = (SELECT COALESCE(-SUM(amount), 0) FROM ledger WHERE ledger.user_id = users.id AND amount < 0 AND game IN ('slots', 'blackjack'))")
 		if 'kind' not in {r['name'] for r in c.execute('PRAGMA table_info(loans)')}:
 			c.execute('ALTER TABLE loans ADD COLUMN kind TEXT NOT NULL DEFAULT \'refill\'')
+		if 'jackpot' not in {r['name'] for r in c.execute('PRAGMA table_info(house)')}: # the slots jackpot, seeded from the house the first time
+			c.execute('ALTER TABLE house ADD COLUMN jackpot INTEGER NOT NULL DEFAULT 0')
+			house_move(c, -JACKPOT_SEED)
+			jackpot_move(c, JACKPOT_SEED, f'seeded with {money(JACKPOT_SEED)} from the house')
+
+
+def jackpot(c: sqlite3.Connection) -> int:
+	'''Return the slots jackpot in cents.'''
+
+	return c.execute('SELECT jackpot FROM house WHERE id=1').fetchone()['jackpot']
+
+
+def jackpot_move(c: sqlite3.Connection, amount: int, note: str) -> int:
+	'''Add (or with a negative amount, take) chips from the slots jackpot and record it in the ledger. The caller moves the other side. Returns the new jackpot.'''
+
+	c.execute('UPDATE house SET jackpot = jackpot + ? WHERE id=1', (amount,))
+	pot = jackpot(c)
+	c.execute('INSERT INTO ledger(user_id, amount, balance, game, note, at) VALUES(?, ?, ?, ?, ?, ?)', (JACKPOT_USER, amount, pot, 'jackpot', note, int(time.time())))
+	return pot
 
 
 def leaderboard(c: sqlite3.Connection, limit: int = LEADERBOARD_N) -> list:
@@ -352,13 +379,14 @@ def refills_grant(user_id: int):
 
 
 def refund_bets():
-	'''Give back blackjack bets from rounds a restart cut off.'''
+	'''Give back blackjack and roulette bets from rounds a restart cut off.'''
 
 	with DB_LOCK, db_connect() as c:
-		for row in c.execute('SELECT user_id, stake FROM bj_bets').fetchall():
-			if row['stake']:
-				move(c, row['user_id'], row['stake'], 'blackjack', f'refund of {money(row["stake"])} after a restart')
-		c.execute('DELETE FROM bj_bets')
+		for table, game in (('bj_bets', 'blackjack'), ('rl_bets', 'roulette')):
+			for row in c.execute(f'SELECT user_id, stake FROM {table}').fetchall():
+				if row['stake']:
+					move(c, row['user_id'], row['stake'], game, f'refund of {money(row["stake"])} after a restart')
+			c.execute(f'DELETE FROM {table}')
 
 
 def rename_user(c: sqlite3.Connection, user_id: int, username: str):
@@ -447,5 +475,5 @@ def wallet_stamp(user_id: int) -> tuple:
 	'''Return everything wallet() is worked out from that can change without the clock moving, or None for a missing user, so a caller can skip wallet() while it stays the same.'''
 
 	with db_connect() as c:
-		row = c.execute('SELECT username, balance, owed, score, wagered, created_at > ? AS young, (SELECT MAX(id) FROM loans WHERE user_id=u.id) AS loan, EXISTS(SELECT 1 FROM poker_seats WHERE user_id=u.id) OR EXISTS(SELECT 1 FROM bj_bets WHERE user_id=u.id) AS busy FROM users u WHERE id=?', (time.time() - LOAN_AGE, user_id)).fetchone()
+		row = c.execute('SELECT username, balance, owed, score, wagered, created_at > ? AS young, (SELECT MAX(id) FROM loans WHERE user_id=u.id) AS loan, EXISTS(SELECT 1 FROM poker_seats WHERE user_id=u.id) OR EXISTS(SELECT 1 FROM bj_bets WHERE user_id=u.id) OR EXISTS(SELECT 1 FROM rl_bets WHERE user_id=u.id) AS busy FROM users u WHERE id=?', (time.time() - LOAN_AGE, user_id)).fetchone()
 	return tuple(row) if row else None

@@ -8,14 +8,16 @@ import random
 import chat
 import hub
 from cards import RNG
-from storage import DB_LOCK, NotEnough, credit, db_connect, house_move, money, move, wager
+from storage import DB_LOCK, JACKPOT_SEED, NotEnough, credit, db_connect, house_move, jackpot_move, money, move, wager
 
 
-BETS    = [100, 200, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000] # cents per spin, split evenly over the lines
-ROWS    = 3
-WILD    = 'W'
-SCATTER = 'S'
-SYMBOLS = {'C': 'Cherry', 'L': 'Lemon', 'O': 'Orange', 'P': 'Grapes', 'B': 'Bell', 'R': 'Bar', '7': 'Seven', WILD: 'Wild', SCATTER: 'Scatter'}
+BETS          = [100, 200, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000] # cents per spin, split evenly over the lines
+JACKPOT_SHARE = 100           # 1/100 of every bet is put into the jackpot by the house, on top of the 96.5% the reels pay
+JACKPOT_ODDS  = 5_000_000_000 # a spin hits the jackpot with a chance of bet in cents / this, so a $1,000 spin hits once in 50,000
+ROWS          = 3
+WILD          = 'W'
+SCATTER       = 'S'
+SYMBOLS       = {'C': 'Cherry', 'L': 'Lemon', 'O': 'Orange', 'P': 'Grapes', 'B': 'Bell', 'R': 'Bar', '7': 'Seven', WILD: 'Wild', SCATTER: 'Scatter'}
 
 # How many of each symbol is on each of the five reels
 REEL_COUNTS = [
@@ -77,7 +79,13 @@ def build_strips() -> list:
 def info() -> dict:
 	'''Return the pay table and lines for the client.'''
 
-	return {'bets': BETS, 'worst': WORST, 'lines': LINES, 'pays': PAYS, 'scatter_pays': SCATTER_PAYS, 'symbols': SYMBOLS, 'rtp': round(rtp() * 100, 2), 'strips': STRIPS}
+	return {'bets': BETS, 'jackpot_odds': JACKPOT_ODDS, 'jackpot_rtp': round(jackpot_rtp() * 100, 2), 'worst': WORST, 'lines': LINES, 'pays': PAYS, 'scatter_pays': SCATTER_PAYS, 'symbols': SYMBOLS, 'rtp': round(rtp() * 100, 2), 'strips': STRIPS}
+
+
+def jackpot_rtp() -> float:
+	'''Return what the jackpot adds to the return to player over the long run: every share put in is paid out in the end, plus the seed the house puts up for each win.'''
+
+	return 1 / JACKPOT_SHARE + JACKPOT_SEED / JACKPOT_ODDS
 
 
 def line_pay(syms: list) -> tuple:
@@ -118,7 +126,7 @@ def rtp() -> float:
 
 
 def spin(user_id: int, name: str, bet: int) -> dict:
-	'''Take a bet, spin the reels and pay any wins.'''
+	'''Take a bet, spin the reels, pay any wins and maybe the jackpot.'''
 
 	if type(bet) is not int or bet not in BETS: # 100.0 == 100, so a JSON float would pass the list check alone
 		return {'error': 'pick one of the bet sizes'}
@@ -127,6 +135,7 @@ def spin(user_id: int, name: str, bet: int) -> dict:
 	stops  = [RNG.randrange(len(s)) for s in STRIPS]
 	grid   = [[STRIPS[r][(stops[r] + row) % len(STRIPS[r])] for row in range(ROWS)] for r in range(len(STRIPS))] # grid[reel][row]
 	unit   = bet // len(LINES)
+	hit    = RNG.randrange(JACKPOT_ODDS) < bet # the chance grows in step with the bet
 	wins   = []
 	for i, line in enumerate(LINES):
 		mult, count = line_pay([grid[r][row] for r, row in enumerate(line)])
@@ -136,6 +145,7 @@ def spin(user_id: int, name: str, bet: int) -> dict:
 	if scatters in SCATTER_PAYS:
 		wins.append({'line': None, 'count': scatters, 'pay': SCATTER_PAYS[scatters] * bet})
 	payout = sum(w['pay'] for w in wins)
+	won    = 0
 	with DB_LOCK, db_connect() as c:
 		try:
 			bal = move(c, user_id, -bet, 'slots', f'spin {money(bet)}')
@@ -143,10 +153,21 @@ def spin(user_id: int, name: str, bet: int) -> dict:
 			return {'error': 'not enough chips'}
 		if payout:
 			bal = credit(c, user_id, payout, bet, 'slots', f'won {money(payout)}')
-		house_move(c, bet - payout)
+		house_move(c, bet - payout - bet // JACKPOT_SHARE)
+		pot = jackpot_move(c, bet // JACKPOT_SHARE, f'{money(bet // JACKPOT_SHARE)} from the house on a {money(bet)} spin')
+		if hit:
+			won = pot
+			jackpot_move(c, -won, f'won by {name}')
+			bal = credit(c, user_id, won, 0, 'slots', f'won the {money(won)} jackpot')
+			house_move(c, -JACKPOT_SEED)
+			pot = jackpot_move(c, JACKPOT_SEED, f'seeded with {money(JACKPOT_SEED)} from the house')
 		wager(c, user_id, bet)
-	chat.announce(name, payout - bet, 'slots', user_id)
-	return {'stops': stops, 'grid': grid, 'wins': wins, 'payout': payout, 'balance': bal}
+	if won:
+		chat.add('lobby', None, 'casino', f'{name} hit the {money(won)} SLOTS JACKPOT')
+		if payout + won - bet < chat.BIG_WIN:
+			chat.event(user_id, 'bigwin', f'hit the {money(won)} jackpot at slots')
+	chat.announce(name, payout + won - bet, 'slots', user_id)
+	return {'stops': stops, 'grid': grid, 'wins': wins, 'payout': payout, 'jackpot': won, 'pot': pot, 'balance': bal}
 
 
 STRIPS = build_strips()

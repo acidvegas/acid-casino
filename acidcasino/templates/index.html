@@ -12,8 +12,8 @@
 	<meta name="application-name" content="acid casino">
 	<meta name="color-scheme" content="dark">
 	<meta name="theme-color" content="#000000">
-	<title>acid casino - blackjack, poker and slots with play chips</title>
-	<meta name="description" content="Play multiplayer blackjack, no-limit Texas Hold'em and slots for free with play chips. Every account starts with $1,000. Real casino rules, no real money.">
+	<title>acid casino - blackjack, poker, roulette and slots with play chips</title>
+	<meta name="description" content="Play multiplayer blackjack, no-limit Texas Hold'em, roulette and slots for free with play chips. Every account starts with $1,000. Real casino rules, no real money.">
 	<link rel="canonical" href="{{ url }}">
 	<meta property="og:type" content="website">
 	<meta property="og:site_name" content="acid casino">
@@ -75,7 +75,7 @@
 				<div class="auth-wrap">
 					<div class="auth-hero">
 						<div class="hero-cards" aria-hidden="true"><div class="card hero c1"></div><div class="card hero c2"></div><div class="card hero c3"></div></div>
-						<h1>Blackjack. Hold'em. Slots.</h1>
+						<h1>Blackjack. Hold'em. Roulette. Slots.</h1>
 						<p>Real casino rules with play chips. Sit at a table with other people or play the house. New accounts start with <b id="start-chips">$1,000</b>.</p>
 					</div>
 					<div class="panel auth-card">
@@ -125,6 +125,17 @@
 								</div>
 							</div>
 						</div>
+						<div class="tile tile-rl">
+							<div class="tile-art rl-art" aria-hidden="true"><span></span></div>
+							<div class="tile-body">
+								<h2>Roulette</h2>
+								<p>European single zero and American double zero wheels.</p>
+								<div class="tile-btns">
+									<button class="btn primary small" data-quick="rl-solo">Play solo</button>
+									<button class="btn small" data-filter-go="roulette">Tables</button>
+								</div>
+							</div>
+						</div>
 						<a class="tile tile-sl" href="#/slots">
 							<div class="tile-art slot-art" aria-hidden="true"><span>7</span><span>7</span><span>7</span></div>
 							<div class="tile-body">
@@ -136,6 +147,7 @@
 					</div>
 					<div class="house" id="house">
 						<div class="house-bank"><small>THE HOUSE</small><b id="house-bal">$1,000,000,000</b></div>
+						<a class="jackpot-meter house-jackpot" href="#/slots" aria-label="Slots jackpot"><small>SLOTS JACKPOT</small><b class="jackpot-amt" aria-live="off">$50,000</b></a>
 						<div class="house-race">
 							<div class="house-bar"><i id="house-fill"></i></div>
 							<div class="house-note" id="house-note">Get richer than the house to topple it</div>
@@ -147,6 +159,7 @@
 								<div class="seg small" id="table-filter">
 									<button class="active" data-filter="all">All</button>
 									<button data-filter="blackjack">Blackjack</button>
+									<button data-filter="roulette">Roulette</button>
 									<button data-filter="poker">Poker</button>
 								</div>
 								<form class="code-form" id="code-form"><input id="code-input" placeholder="Code" aria-label="Table code" maxlength="5" autocomplete="off" autocapitalize="none"><button class="btn small" type="submit">Join</button></form>
@@ -272,11 +285,57 @@
 				</div>
 			</section>
 
+			<!-- Roulette table -->
+			<section class="view game-view hidden" id="view-rl">
+				<div class="game-head">
+					<a class="icon-btn" href="#/lobby" title="Lobby" aria-label="Back to lobby"><svg><use href="#i-back"/></svg></a>
+					<div class="game-title"><b id="rl-name"></b><span id="rl-stakes"></span></div>
+					<button class="icon-btn hidden" id="rl-share" title="Copy invite link" aria-label="Copy invite link"><svg><use href="#i-link"/></svg></button>
+					<button class="icon-btn hidden" id="rl-react" title="React or tip the dealer" aria-label="React or tip the dealer"><svg><use href="#i-smile"/></svg></button>
+					<button class="icon-btn" id="rl-help" title="Rules" aria-label="Rules"><svg><use href="#i-help"/></svg></button>
+					<button class="icon-btn hidden" id="rl-leave" title="Stand up" aria-label="Stand up"><svg><use href="#i-exit"/></svg></button>
+				</div>
+				<div class="stage" id="rl-stage">
+					<div class="rl-table" id="rl-table">
+						<div class="rl-side">
+							<div class="rl-wheel" id="rl-wheel" role="img" aria-label="Roulette wheel"></div>
+							<div class="rl-status" id="rl-status"></div>
+							<div class="rl-history" id="rl-history" role="list" aria-label="Last numbers"></div>
+							<div class="rl-seats" id="rl-seats" role="list" aria-label="Players"></div>
+						</div>
+						<div class="felt rl-felt" id="rl-felt" role="region" aria-label="Betting layout">
+							<div class="rl-layout" id="rl-layout"></div>
+						</div>
+					</div>
+				</div>
+				<div class="dock" id="rl-dock">
+					<div class="dock-row hidden" id="rl-sit-row">
+						<span class="dock-note">Tap the layout to bet, or</span>
+						<button class="btn primary" id="rl-sit">Sit down</button>
+					</div>
+					<div class="dock-bet rl-bet-row hidden" id="rl-bet-row">
+						<div class="chip-rack" id="rl-chips" role="radiogroup" aria-label="Chip value"></div>
+						<div class="bet-side">
+							<div class="bet-btns">
+								<button class="btn small ghost" id="rl-undo">Undo</button>
+								<button class="btn small ghost" id="rl-clear">Clear</button>
+								<button class="btn small ghost" id="rl-repeat">Repeat</button>
+								<button class="btn small ghost" id="rl-double" aria-label="Double every bet">2×</button>
+							</div>
+							<div class="bet-amt"><small>ON THE TABLE</small><b id="rl-total">$0</b></div>
+							<button class="btn primary" id="rl-spin">Spin</button>
+						</div>
+					</div>
+					<div class="dock-row hidden" id="rl-wait-row"><span class="dock-note" id="rl-wait"></span></div>
+				</div>
+			</section>
+
 			<!-- Slots -->
 			<section class="view game-view hidden" id="view-slots">
 				<div class="stage slot-stage">
 					<div class="machine" id="machine" role="region" aria-label="Slot machine">
 						<div class="marquee"><span>ACID</span><b>SLOTS</b><span>7</span></div>
+						<div class="jackpot-meter slot-jackpot" id="slot-jackpot" role="status" aria-label="Progressive jackpot"><small>PROGRESSIVE JACKPOT</small><b class="jackpot-amt" aria-live="off">$50,000</b></div>
 						<div class="reels-wrap">
 							<div class="reels" id="reels" role="group" aria-label="Reels"></div>
 							<svg class="lines-svg" id="lines-svg" aria-hidden="true" viewBox="0 0 500 300" preserveAspectRatio="none"></svg>
@@ -334,6 +393,16 @@
 		<div class="react-emojis" id="react-emojis"></div>
 		<small>TIP THE DEALER</small>
 		<div class="react-tips" id="react-tips"></div>
+	</div>
+
+	<div class="jackpot-win hidden" id="jackpot-win" role="alertdialog" aria-label="Jackpot">
+		<div class="jackpot-rays" aria-hidden="true"></div>
+		<div class="jackpot-box">
+			<small>PROGRESSIVE</small>
+			<b class="jackpot-word" aria-hidden="true"><span>J</span><span>A</span><span>C</span><span>K</span><span>P</span><span>O</span><span>T</span></b>
+			<div class="jackpot-won" id="jackpot-won">$0</div>
+			<button class="btn primary" id="jackpot-ok">Collect</button>
+		</div>
 	</div>
 
 	<div class="toast hidden" id="toast"></div>
