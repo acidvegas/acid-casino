@@ -62,7 +62,7 @@ Blackjack, no-limit Texas Hold'em, roulette and slots in the browser with play c
 - 5 reels, 3 rows, 10 fixed lines, with a wild and a scatter. Each winning line is drawn in its own color and numbered, and the win meter steps through every win with what made it and what it paid
 - Bets from $1 to $1,000 a spin, with 5 and 10 spin auto runs
 - 96.5% return to player, worked out exactly from the reel strips and pay table *(see `slots.rtp()`)* and checked against a simulation in the tests
-- A progressive jackpot shared by everyone, shown on the machine and in the lobby. The house puts 1% of every bet into it, on top of the 96.5%, and seeds it with $50,000, again after every win. Any spin can hit it, with a chance of the bet in cents in 5,000,000,000: 1 in 50,000 at $1,000 and 1 in 5,000,000 at $1. Over the long run it adds 1.1% to the return *(the 1% put in plus the seed of every win, see `slots.jackpot_rtp()`)*. The pot is kept in the database and every move in and out of it is in the ledger
+- A jackpot shared by everyone, shown on the machine and in the lobby. The house puts 1% of every bet into it, on top of the 96.5%, and seeds it with $50,000, again after every win. Any spin can hit it, with a chance of the bet in cents in 5,000,000,000: 1 in 50,000 at $1,000 and 1 in 5,000,000 at $1. Over the long run it adds 1.1% to the return *(the 1% put in plus the seed of every win, see `slots.jackpot_rtp()`)*. The pot is kept in the database and every move in and out of it is in the ledger
 
 Cards, shoes, reel stops, the jackpot draw and the roulette pocket come from Python's `secrets` module.
 

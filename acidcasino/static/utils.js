@@ -1716,7 +1716,7 @@ function slotPays() {
 	openModal(`<h3>Pays on a ${money(bet)} spin</h3>
 		<table class="pays"><tr><th></th><th>3 in a row</th><th>4 in a row</th><th>5 in a row</th></tr>${rows}<tr><td><span class="sym">⭐</span></td>${[3, 4, 5].map((n) => `<td>${money(sp[n] * bet)}</td>`).join('')}</tr></table>
 		<p class="note">Your bet is split over ${slotInfo.lines.length} lines <b>(${money(unit)} each)</b>. A line pays when the same symbol runs from the <b>leftmost reel</b> along it, 3 or more in a row. Every line that hits pays, so one spin can win on several. <b>WILD</b> stands in for any symbol except ⭐, and 3 or more wilds on their own pay the wild prize. ⭐ <b>Scatters</b> pay anywhere on the screen, on top of any line wins. Return to player: <b>${slotInfo.rtp}%</b>.</p>
-		<h4>Progressive jackpot</h4>
+		<h4>Jackpot</h4>
 		<p class="note">Every spin can hit the jackpot, whatever the reels show. The chance grows with the bet: <b>1 in ${(slotInfo.jackpot_odds / bet).toLocaleString('en-US')}</b> on this ${money(bet)} spin, 1 in ${(slotInfo.jackpot_odds / slotInfo.bets[slotInfo.bets.length - 1]).toLocaleString('en-US')} at ${money(slotInfo.bets[slotInfo.bets.length - 1])}. The house puts 1% of every bet into it and starts it again at $50,000 after each win, adding about <b>${slotInfo.jackpot_rtp}%</b> on top of the ${slotInfo.rtp}%.</p>
 		<h4>The ${slotInfo.lines.length} lines</h4>
 		<div class="line-maps">${maps}</div>`);
