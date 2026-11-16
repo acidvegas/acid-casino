@@ -13,6 +13,7 @@ if [ -n "$ARCADE_URL" ]; then
 	ARCADE="--network arcade -e ARCADE_URL -e ARCADE_PUBLIC_URL=${ARCADE_PUBLIC_URL:-$PUBLIC} -e ARCADE_GAME=casino -e ARCADE_KEY"
 fi
 docker build -t acidcasino .
+docker run --rm --user root -v acidcasino_data:/data acidcasino chown -R app:app /data # data made by older root containers
 docker rm -f acidcasino 2>/dev/null || true
 docker run -d \
 	--name acidcasino \

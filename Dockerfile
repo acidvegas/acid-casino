@@ -14,9 +14,12 @@ COPY acidcasino/ .
 
 ENV CASINO_DATA_DIR=/data
 ENV PYTHONUNBUFFERED=1
-RUN mkdir -p /data
+# Run as an unprivileged user that owns only the data directory
+RUN adduser -D -u 10001 app && mkdir -p /data && chown app:app /data
 
 EXPOSE 20005
+
+USER app
 
 # Poker tables, captchas and blackjack shoes live in process memory, so run a single gevent worker
 CMD ["gunicorn", "--worker-class", "gevent", "--workers", "1", "--worker-connections", "1000", "--graceful-timeout", "5", "--bind", "0.0.0.0:20005", "app:app"]
