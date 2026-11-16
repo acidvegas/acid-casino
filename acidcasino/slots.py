@@ -120,7 +120,7 @@ def rtp() -> float:
 def spin(user_id: int, name: str, bet: int) -> dict:
 	'''Take a bet, spin the reels and pay any wins.'''
 
-	if bet not in BETS:
+	if type(bet) is not int or bet not in BETS: # 100.0 == 100, so a JSON float would pass the list check alone
 		return {'error': 'pick one of the bet sizes'}
 	if bet * WORST > hub.cover():
 		return {'error': 'the house is too low on chips to cover a spin that big right now'}

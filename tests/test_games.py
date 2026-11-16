@@ -147,6 +147,24 @@ class TestBlackjack(unittest.TestCase):
 		self.assertEqual(t.phase, 'done')
 		self.assertEqual(bal(u), 100_000) # lose 10, insurance 5 pays 10
 
+	def test_insurance_short_of_chips_stays_open(self):
+		'''Insurance that can not be paid for leaves the question open instead of counting as turned down.'''
+
+		u, t = solo('bj8', 1_000)
+		rig(t, ['Th', '9h'], ['As', '7s'])
+		blackjack.bet(t, 0, 1_000, True)
+		self.assertEqual(t.phase, 'insurance')
+		self.assertEqual(blackjack.insure(t, 0, True), 'not enough chips')
+		self.assertIsNone(t.seats[0]['insurance'])
+		self.assertTrue(t.view(u)['insure'])
+		self.assertIsNone(blackjack.insure(t, 0, False))
+		self.assertEqual(t.seats[0]['insurance'], 0)
+		self.assertIsNone(blackjack.act(t, 0, 'stand'))
+		while t.phase == 'dealer':
+			t.next_at = 0
+			blackjack.tick(t)
+		self.assertEqual(bal(u), 2_000) # 19 beats 18, paying even money
+
 	def test_double_split_surrender(self):
 		u, t = solo('bj4')
 		v = play(t, 1_000, ['6h', '5h'], ['Ts', '7s'], ['Tc'], actions=['double'])
@@ -321,6 +339,15 @@ class TestSlots(unittest.TestCase):
 		self.assertEqual(slots.line_pay(['S', 'S', 'S', 'C', 'C']), (0, 0))
 		self.assertEqual(slots.line_pay(['C', 'C', 'L', 'C', 'C']), (0, 0))
 
+	def test_float_bet_refused(self):
+		'''A JSON float equal to a bet size is turned away, so balances stay whole cents.'''
+
+		u = make_user('sl1')
+		self.assertEqual(slots.spin(u, 'sl1', 100.0), {'error': 'pick one of the bet sizes'})
+		self.assertEqual(slots.spin(u, 'sl1', True), {'error': 'pick one of the bet sizes'})
+		self.assertEqual(bal(u), 100_000)
+		self.assertIs(type(bal(u)), int)
+
 	def test_rtp_matches_simulation(self):
 		random.seed(1)
 		paid, n = 0, 200_000
@@ -334,6 +361,41 @@ class TestSlots(unittest.TestCase):
 
 
 class TestPoker(unittest.TestCase):
+	def test_restart_mid_hand_after_leaving(self):
+		'''Chips a player left in the pot when standing up go to the house if a restart voids the hand, so nothing is lost.'''
+
+		def everything() -> int:
+			with storage.db_connect() as c:
+				return c.execute('SELECT (SELECT SUM(balance) FROM users) + (SELECT COALESCE(SUM(stack), 0) FROM poker_seats) + (SELECT balance FROM house WHERE id=1)').fetchone()[0]
+
+		hub.TABLES.clear()
+		hub.TABLES['r'] = t = poker.Table('r', 'Restart', 'micro', bots=False)
+		users = [make_user(f'pr{i}') for i in range(3)]
+		for u in users:
+			played(u)
+		before = everything()
+		for u in users:
+			self.assertIsNone(poker.join(t, u, f'pr{u}', 4_000))
+		self.assertTrue(poker.start_hand(t))
+		h = t.hand
+		self.assertIsNone(poker.act(t, h['to_act'], 'raise', 1_000))
+		sb = h['sb_seat']
+		self.assertEqual(h['to_act'], sb)
+		self.assertIsNone(poker.act(t, sb, 'call'))
+		leaver = t.seats[sb]['user_id']
+		poker.leave(t, sb)
+		self.assertNotEqual(h['street'], 'done') # two players still in, so the hand goes on
+		self.assertEqual(bal(leaver), 100_000 - 1_000)
+		with storage.db_connect() as c:
+			self.assertEqual(c.execute('SELECT amount FROM poker_pots WHERE table_id=?', ('r',)).fetchone()[0], 1_000)
+		bank = house()
+		hub.TABLES.clear() # the restart: the hand in memory is gone
+		poker.cash_out_all()
+		self.assertEqual(house(), bank + 1_000)
+		self.assertEqual(everything(), before)
+		with storage.db_connect() as c:
+			self.assertIsNone(c.execute('SELECT 1 FROM poker_pots').fetchone())
+
 	def test_side_pots(self):
 		h = {'players': {0: {'total': 100, 'folded': False}, 1: {'total': 300, 'folded': False}, 2: {'total': 300, 'folded': False}, 3: {'total': 50, 'folded': True}}}
 		self.assertEqual(poker.pots(h), [(350, [0, 1, 2]), (400, [1, 2])])

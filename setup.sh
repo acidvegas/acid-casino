@@ -19,7 +19,7 @@ docker run -d \
 	--name acidcasino \
 	--restart unless-stopped \
 	-p ${CASINO_BIND:-127.0.0.1}:20005:20005 \
-	-e CASINO_PROXIES=${CASINO_PROXIES:-0} \
+	-e CASINO_PROXIES=${CASINO_PROXIES:-1} \
 	-v acidcasino_data:/data \
 	$PUBLIC_URL \
 	$ARCADE \

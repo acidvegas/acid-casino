@@ -7,6 +7,7 @@ import secrets
 import threading
 import time
 
+import chat
 from storage import HOUSE_START
 
 
@@ -64,6 +65,7 @@ def loop(every):
 					table.empty_since = table.empty_since or now
 					if now - table.empty_since > CLOSE_AFTER:
 						del TABLES[table.id]
+						chat.drop(table.id)
 						changed = True
 			if changed:
 				notify()

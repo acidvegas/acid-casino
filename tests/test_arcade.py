@@ -317,6 +317,54 @@ class TestArcade(unittest.TestCase):
 			res = self.client.post('/chat', headers=auth, json={'room': tid, 'text': 'hi'})
 		self.assertEqual(res.get_json()['error'], 'sit at the table to chat here')
 
+	def test_closed_table_drops_chat(self):
+		'''A player made table closed for sitting empty takes its chat and reactions with it.'''
+
+		calls = []
+
+		def sleep(_):
+			calls.append(1)
+			if len(calls) > 1:
+				raise StopLoop()
+
+		t = blackjack.Table('tgone', 'Gone', 'low')
+		t.empty_since = time.time() - hub.CLOSE_AFTER - 1
+		with mock.patch.dict(hub.TABLES, {'tgone': t}, clear=True), mock.patch.object(hub, 'time', types.SimpleNamespace(time=time.time, sleep=sleep)):
+			chat.add('tgone', 1, 'someone', 'hi')
+			chat.react('tgone', 'someone', chat.EMOJIS[0])
+			try:
+				hub.loop(lambda: False)
+			except StopLoop:
+				pass
+			self.assertNotIn('tgone', hub.TABLES)
+		self.assertNotIn('tgone', chat.ROOMS)
+		self.assertNotIn('tgone', chat.REACTS)
+
+	def test_events_skip_unchanged_wallet(self):
+		'''An event stream only works out the wallet again when something it is made from changed.'''
+
+		self.session_as(9501, 'watcher')
+		with mock.patch.object(app, 'wallet', wraps=storage.wallet) as wallet:
+			res = self.client.get('/events?t=t', environ_base={'REMOTE_ADDR': '10.8.1.1'}, buffered=False)
+			self.addCleanup(res.close)
+			chunks = res.iter_encoded()
+			next(chunks) # padding
+			self.assertIn(b'event: me', next(chunks))
+			self.assertEqual(wallet.call_count, 1)
+			chat.add('lobby', None, 'casino', 'nothing changed for the watcher')
+			hub.notify()
+			chunk = next(chunks)
+			self.assertIn(b'nothing changed for the watcher', chunk)
+			self.assertNotIn(b'event: me', chunk)
+			self.assertEqual(wallet.call_count, 1)
+			with storage.DB_LOCK, storage.db_connect() as c:
+				storage.move(c, 9501, 100, 'bank', 'test')
+			hub.notify()
+			self.assertIn(b'event: me', next(chunks))
+			self.assertEqual(wallet.call_count, 2)
+		with storage.DB_LOCK, storage.db_connect() as c:
+			storage.delete_user(c, 9501)
+
 	def test_table_limit_per_ip(self):
 		'''An IP address can have 5 player made tables open across accounts, other IP addresses are not held back.'''
 

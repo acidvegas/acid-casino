@@ -20,7 +20,7 @@ import hub
 import poker
 import slots
 from auth import USERNAME_RE, attempt, blocked, captcha_create, captcha_verify, create_session, delete_session, mirror_user, request_token, request_user, session_user
-from storage import CREDIT_TIERS, DB_LOCK, DEBT_CAP, HOUSE_START, LATE_AFTER, LATE_COST, LOAN_AGE, LOAN_FREEZE, LOAN_MIN, LOAN_WAGERED, MAXED_COST, PAID_FAST, PAID_OK, REFILL_AMOUNT, REFILL_UNDER, REFILL_WAIT, REPAY_SHARE, SCORE_RANGE, START_BALANCE, TIPS, accrue, borrow, db_connect, delete_user, fame, house_balance, init_db, leaderboard, money, prune_sessions, refill_request, refund_bets, rename_user, repay, signup_allowed, summaries, tip, wallet
+from storage import CREDIT_TIERS, DB_LOCK, DEBT_CAP, HOUSE_START, LATE_AFTER, LATE_COST, LOAN_AGE, LOAN_FREEZE, LOAN_MIN, LOAN_WAGERED, MAXED_COST, PAID_FAST, PAID_OK, REFILL_AMOUNT, REFILL_UNDER, REFILL_WAIT, REPAY_SHARE, SCORE_RANGE, START_BALANCE, TIPS, accrue, borrow, db_connect, delete_user, fame, house_balance, init_db, leaderboard, money, prune_sessions, refill_request, refund_bets, rename_user, repay, signup_allowed, summaries, tip, wallet, wallet_stamp
 
 
 app = Flask(__name__)
@@ -460,6 +460,7 @@ def events():
 
 	def stream():
 		last  = {}
+		stamp = None # what the last wallet was worked out from, so a wake that changed nothing for this player skips wallet()
 		seen  = {'lobby': 0, 'table': 0, 'feed': 0, 'react': chat.REACT_NEXT[0]} # reactions from before the page opened are never replayed
 		wrote = time.time()
 		try:
@@ -474,7 +475,13 @@ def events():
 					tmsgs = chat.since(tid, seen['table']) if table else []
 					react = chat.reacts_since(tid, seen['react']) if table else []
 					feed  = chat.feed_since(seen['feed'])
-				mine = json.dumps(wallet(user_id)) if user_id else 'null'
+				mine = last.get('me', 'null')
+				if user_id:
+					fresh = (wallet_stamp(user_id), hub.HOUSE.get('lending'))
+					if fresh != stamp:
+						w     = wallet(user_id)
+						mine  = json.dumps(w)
+						stamp = None if w and (w['refill_ready_in'] is not None or w['owed']) else fresh # a refill countdown (and its payout) or an open debt moves with the clock, so those wallets are worked out on every wake as before
 				for name, data in (('lobby', lobby), ('me', mine)) + ((('table', tview),) if tid else ()):
 					if last.get(name) != data:
 						last[name] = data

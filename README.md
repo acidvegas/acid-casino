@@ -62,7 +62,7 @@ Cards, shoes and reel stops come from Python's `secrets` module.
 CASINO_BIND=127.0.0.1 ./setup.sh
 ```
 
-The app listens on port 20005. Set `CASINO_PROXIES=1` when it runs behind a reverse proxy like nginx so the real client address is used.
+The app listens on port 20005. `CASINO_PROXIES` is the number of reverse proxies in front of it, so the real client address is used. `setup.sh` sets `1`, since it publishes the port on 127.0.0.1 for nginx; leave it at `0` when the app is reached directly.
 
 Set `CASINO_PUBLIC_URL` *(e.g. `https://casino.acid.vegas`)* when the casino is served on more than one domain, so the canonical link, share cards, robots.txt and sitemap all point at the main one. Unset, they use whatever host the request came in on.
 
@@ -92,7 +92,7 @@ With `ARCADE_URL` set, `setup.sh` also joins the container to the `arcade` docke
 ## Tests
 
 ```bash
-.venv/bin/python tests/test_games.py
+python3 -m unittest discover -s tests
 ```
 
 ---

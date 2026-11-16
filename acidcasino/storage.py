@@ -236,6 +236,10 @@ def init_db():
 			stack    INTEGER NOT NULL,
 			buyin    INTEGER NOT NULL
 		)''')
+		c.execute('''CREATE TABLE IF NOT EXISTS poker_pots (
+			table_id TEXT PRIMARY KEY,
+			amount   INTEGER NOT NULL
+		)''')
 		c.execute('''CREATE TABLE IF NOT EXISTS house (
 			id      INTEGER PRIMARY KEY CHECK (id = 1),
 			balance INTEGER NOT NULL
@@ -437,3 +441,11 @@ def wallet(user_id: int) -> dict:
 	out['loans_closed']    = closed
 	out['debt_days']       = (int(time.time()) - row['debt_since']) / 86400 if row['owed'] else None
 	return out
+
+
+def wallet_stamp(user_id: int) -> tuple:
+	'''Return everything wallet() is worked out from that can change without the clock moving, or None for a missing user, so a caller can skip wallet() while it stays the same.'''
+
+	with db_connect() as c:
+		row = c.execute('SELECT username, balance, owed, score, wagered, created_at > ? AS young, (SELECT MAX(id) FROM loans WHERE user_id=u.id) AS loan, EXISTS(SELECT 1 FROM poker_seats WHERE user_id=u.id) OR EXISTS(SELECT 1 FROM bj_bets WHERE user_id=u.id) AS busy FROM users u WHERE id=?', (time.time() - LOAN_AGE, user_id)).fetchone()
+	return tuple(row) if row else None

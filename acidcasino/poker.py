@@ -184,26 +184,31 @@ def bot_decide(table: Table, seat: int) -> tuple:
 
 
 def cash_out(table: Table, seat: int):
-	'''Stand a player up and return their stack to their balance.'''
+	'''Stand a player up and return their stack to their balance. Chips they left in a pot still being played are saved, so a restart before the hand ends gives them to the house.'''
 
 	st = table.seats[seat]
+	h  = table.hand
 	table.seats[seat] = None
 	if st['user_id']:
 		with DB_LOCK, db_connect() as c:
 			c.execute('DELETE FROM poker_seats WHERE user_id=?', (st['user_id'],))
+			if h and h['street'] != 'done' and seat in h['players'] and h['players'][seat]['total']:
+				c.execute('INSERT INTO poker_pots(table_id, amount) VALUES(?, ?) ON CONFLICT(table_id) DO UPDATE SET amount = amount + excluded.amount', (table.id, h['players'][seat]['total']))
 			if st['stack']:
 				credit(c, st['user_id'], st['stack'], st['buyin'], 'poker', f'left {table.name} with {money(st["stack"])}')
 		table.log.append(f'{st["name"]} leaves the table')
 
 
 def cash_out_all():
-	'''Return the chips of everyone seated before the last restart. The hand they were in is void.'''
+	'''Return the chips of everyone seated before the last restart. The hand they were in is void, and chips left in it by players who stood up go to the house.'''
 
 	with DB_LOCK, db_connect() as c:
 		for row in c.execute('SELECT user_id, table_id, stack, buyin FROM poker_seats').fetchall():
 			if row['stack']:
 				credit(c, row['user_id'], row['stack'], row['buyin'], 'poker', f'cashed out {money(row["stack"])} after a restart')
 		c.execute('DELETE FROM poker_seats')
+		house_move(c, c.execute('SELECT COALESCE(SUM(amount), 0) FROM poker_pots').fetchone()[0])
+		c.execute('DELETE FROM poker_pots')
 
 
 def equity(hole: list, board: list, opps: int) -> float:
@@ -259,6 +264,7 @@ def finish(table: Table):
 			elif st:
 				wager(c, st['user_id'], p['total'])
 		house_move(c, bots)
+		c.execute('DELETE FROM poker_pots WHERE table_id=?', (table.id,)) # the pot is paid out, chips left in it by players who stood up included
 	for s, p in h['players'].items():
 		st = table.seats[s]
 		if st and st['user_id'] and st['stack'] != p['start']:

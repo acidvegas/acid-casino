@@ -57,9 +57,10 @@ def announce(name: str, profit: int, game: str, user_id: int = None):
 
 
 def drop(room: str):
-	'''Forget a closed table's chat.'''
+	'''Forget a closed table's chat and reactions.'''
 
 	ROOMS.pop(room, None)
+	REACTS.pop(room, None)
 
 
 def event(user_id: int, kind: str, text: str):

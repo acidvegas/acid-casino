@@ -225,14 +225,14 @@ def insure(t: Table, seat: int, yes: bool) -> str:
 	s = t.seats[seat]
 	if t.phase != 'insurance' or not s or not s['hands'] or s['insurance'] is not None:
 		return 'no insurance to answer'
-	s['insurance'] = 0
+	cost = 0
 	if yes:
 		cost = s['hands'][0]['bet'] // 2
 		try:
 			stake(t, s, cost, 'insurance')
 		except NotEnough:
 			return 'not enough chips'
-		s['insurance'] = cost
+	s['insurance'] = cost
 	if all(x['insurance'] is not None for x in t.seats if x and x['hands']):
 		peek(t)
 
