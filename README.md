@@ -1,6 +1,53 @@
-# acid-casino
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/logo-dark.png">
+    <img src=".github/logo-light.png" alt="acid-casino" width="560">
+  </picture>
+</h1>
 
-Blackjack, no-limit Texas Hold'em, roulette and slots in the browser with play chips, built with Flask.
+<p align="center"><b>Blackjack, no-limit Texas Hold'em, roulette and slots in the browser with play chips, built with Flask.</b></p>
+
+<p align="center">
+  <a href="https://casino.supernets.org"><img src="https://img.shields.io/badge/play-casino.supernets.org-39ff7a?style=for-the-badge&labelColor=04260f" alt="Play now"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.12+-3776ab?logo=python&logoColor=white" alt="Python 3.12+">
+  <img src="https://img.shields.io/badge/flask-3.1-000000?logo=flask&logoColor=white" alt="Flask 3.1">
+  <img src="https://img.shields.io/badge/docker-ready-2496ed?logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/games-4-39ff7a?labelColor=04260f" alt="4 games">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-ISC-6c9e7f" alt="ISC License"></a>
+</p>
+
+<p align="center">
+  <img src=".github/screenshots/poker.png" alt="A Hold'em hand on the flop" width="860">
+</p>
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src=".github/screenshots/blackjack.png" alt="Blackjack"></td>
+    <td width="50%"><img src=".github/screenshots/roulette.png" alt="Roulette"></td>
+  </tr>
+  <tr>
+    <td align="center"><i>Blackjack</i></td>
+    <td align="center"><i>European roulette with bets on the layout</i></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src=".github/screenshots/slots.png" alt="Slots"></td>
+    <td width="50%"><img src=".github/screenshots/lobby.png" alt="Lobby"></td>
+  </tr>
+  <tr>
+    <td align="center"><i>Slots</i></td>
+    <td align="center"><i>The lobby, with the house bankroll and the slots jackpot</i></td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src=".github/screenshots/mobile.png" alt="Playing Hold'em on a phone" width="300"><br>
+  <i>Playing Hold'em on a phone</i>
+</p>
 
 ## Features
 
